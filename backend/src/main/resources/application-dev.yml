@@ -1,0 +1,33 @@
+# 心语 (Xinyu) · AI 情绪日记与匿名树洞
+# Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
+# 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    # 本机开发默认连 127.0.0.1:3306/xinyu，可用环境变量覆盖（例如端口不是 3306 时）
+    url: ${SPRING_DATASOURCE_URL:jdbc:mysql://127.0.0.1:3306/xinyu?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true}
+    username: ${SPRING_DATASOURCE_USERNAME:root}
+    password: ${SPRING_DATASOURCE_PASSWORD:root}
+  data:
+    redis:
+      host: ${SPRING_DATA_REDIS_HOST:127.0.0.1}
+      port: ${SPRING_DATA_REDIS_PORT:6379}
+      database: 0
+      timeout: 3000
+  # 开发环境自动执行建表脚本
+  sql:
+    init:
+      mode: always
+      # upgrade-*.sql 都是幂等的增量升级脚本，老库补字段、新库自动跳过
+      schema-locations: classpath:db/schema.sql,classpath:db/upgrade-v2.sql,classpath:db/upgrade-v2.2.sql
+      data-locations: classpath:db/data.sql
+      continue-on-error: false
+
+# —— 以下是仅限本机开发/演示的开关，生产环境一律关闭 ——
+xinyu:
+  captcha:
+    # 图形验证码接口会把答案一并返回，方便写自动化测试与本地演示
+    echo-code: true
+  sms:
+    # 本机没有接短信服务商，验证码写日志 + 响应里回显，方便演示
+    echo-code: true

@@ -1,0 +1,32 @@
+# 心语 (Xinyu) · AI 情绪日记与匿名树洞
+# Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
+# 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
+spring:
+  datasource:
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    url: jdbc:mysql://${MYSQL_HOST:mysql}:3306/${MYSQL_DB:xinyu}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
+    username: ${MYSQL_USER:root}
+    password: ${MYSQL_PASSWORD:root}
+  data:
+    redis:
+      host: ${REDIS_HOST:redis}
+      port: 6379
+      database: 0
+      timeout: 3000
+      password: ${REDIS_PASSWORD:}
+  sql:
+    init:
+      mode: never
+
+logging:
+  level:
+    com.xinyu: info
+
+xinyu:
+  jwt:
+    # 生产环境必须显式注入：这里不写默认值，缺失时进程直接启动失败，
+    # 避免用仓库里的公开占位值签发 JWT（任何人都能伪造管理员 token）
+    secret: ${JWT_SECRET}
+  ai:
+    # 生产环境同样不内置 Key；留空会降级为 Mock，启动日志会明确提示
+    api-key: ${AI_API_KEY:}

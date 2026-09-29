@@ -1,0 +1,429 @@
+/*
+心语 (Xinyu) · AI 情绪日记与匿名树洞
+Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
+仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
+*/
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+/*
+ * 主题色：青蓝（teal）
+ * 原来的紫色 #6c5ce7 偏冷硬、在深色模式下刺眼，换成青绿之后
+ * 更贴合「情绪陪伴」的调性，也顺带解决了注册页文字发紫的问题。
+ * 需要强调的地方统一引用 --xinyu-accent，不要再写死颜色。
+ */
+:root {
+  --xinyu-accent: #0d9488;
+  --xinyu-accent-soft: rgba(13, 148, 136, 0.12);
+  --xinyu-accent-glow: rgba(13, 148, 136, 0.28);
+  /* 毛玻璃：半透明底 + 背景模糊 */
+  --xinyu-glass-bg: rgba(255, 255, 255, 0.66);
+  --xinyu-glass-strong: rgba(255, 255, 255, 0.88);
+  --xinyu-glass-border: rgba(255, 255, 255, 0.6);
+  --xinyu-shadow: 0 8px 28px rgba(15, 23, 42, 0.12);
+
+  /* 外壳宽度：手机上一列到底，PC 上由文件末尾的媒体查询放宽，卡片列表跟着变多列 */
+  --xinyu-shell: 560px;
+
+  /* 液态玻璃：一层薄染色 + 一道高光边 + 大范围柔和投影 */
+  --xinyu-liquid-tint: rgba(255, 255, 255, 0.46);
+  --xinyu-liquid-rim: rgba(255, 255, 255, 0.9);
+  --xinyu-liquid-edge: rgba(255, 255, 255, 0.58);
+  --xinyu-liquid-blur: 30px;
+  --xinyu-liquid-shadow: 0 26px 60px rgba(15, 23, 42, 0.26);
+  --xinyu-liquid-blob-opacity: 0.55;
+
+  /* Vant 主色跟随品牌色，按钮、开关、选中态一起变 */
+  --van-primary-color: var(--xinyu-accent);
+}
+
+/* van-config-provider 会在 <html> 上加 van-theme-dark */
+html.van-theme-dark {
+  --xinyu-accent: #2dd4bf;
+  --xinyu-accent-soft: rgba(45, 212, 191, 0.16);
+  --xinyu-accent-glow: rgba(45, 212, 191, 0.3);
+  --xinyu-glass-bg: rgba(26, 28, 32, 0.62);
+  --xinyu-glass-strong: rgba(30, 32, 36, 0.88);
+  --xinyu-glass-border: rgba(255, 255, 255, 0.12);
+  --xinyu-shadow: 0 8px 28px rgba(0, 0, 0, 0.45);
+
+  /* 深色模式：玻璃底压得更暗，边缘高光收细，否则整块会发白 */
+  --xinyu-liquid-tint: rgba(24, 28, 34, 0.52);
+  --xinyu-liquid-rim: rgba(255, 255, 255, 0.22);
+  --xinyu-liquid-edge: rgba(255, 255, 255, 0.12);
+  --xinyu-liquid-shadow: 0 26px 60px rgba(0, 0, 0, 0.6);
+  --xinyu-liquid-blob-opacity: 0.42;
+}
+
+html,
+body {
+  height: 100%;
+  /* 用 Vant 的变量而不是写死的颜色，深色模式下自动跟着变 */
+  background: var(--van-background);
+  color: var(--van-text-color);
+  font-family: -apple-system, BlinkMacSystemFont, 'Helvetica Neue', Helvetica,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+#app {
+  min-height: 100%;
+  max-width: var(--xinyu-shell);
+  margin: 0 auto;
+  background:
+    radial-gradient(1100px 360px at 50% -120px, var(--xinyu-accent-soft), transparent 70%),
+    var(--van-background-2);
+}
+
+.page {
+  padding: 12px 16px 80px;
+}
+
+.page-title {
+  font-size: 20px;
+  font-weight: 600;
+  margin: 8px 0 16px;
+}
+
+.van-nav-bar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  background: var(--xinyu-glass-bg);
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+}
+
+/* 品牌色文字（昵称、强调）——不要再用写死的紫色 */
+.accent {
+  color: var(--xinyu-accent);
+}
+
+/* ---------- 磨砂玻璃弹窗 ---------- */
+.van-popup,
+.van-dialog,
+.van-action-sheet,
+.van-toast,
+.van-notify {
+  background: var(--xinyu-glass-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+}
+
+/*
+ * Toast / Notify 原本是「深底白字」，上面的玻璃背景把深底换掉了，
+ * 文字色就必须显式跟随主题，否则浅色模式下会白底白字（错误提示看不见）。
+ */
+.van-toast,
+.van-notify {
+  --van-toast-text-color: var(--van-text-color);
+  --van-toast-loading-icon-color: var(--van-text-color);
+  --van-notify-text-color: var(--van-text-color);
+}
+
+/* 浅色下玻璃和页面都是白的，加一圈描边和阴影才分得出来 */
+.van-toast {
+  border: 1px solid var(--xinyu-glass-border);
+  box-shadow: var(--xinyu-shadow);
+}
+
+.van-popup--round {
+  box-shadow: var(--xinyu-shadow);
+}
+
+.van-dialog,
+.van-action-sheet {
+  border: 1px solid var(--xinyu-glass-border);
+}
+
+/* 弹窗里的输入框透出底色，避免整块白显得突兀 */
+.van-popup .van-cell,
+.van-popup .van-field {
+  background: transparent;
+}
+
+/* ---------- 底部导航毛玻璃（见 components/TabBar.vue） ---------- */
+.xinyu-tabbar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  background: var(--xinyu-glass-bg);
+  backdrop-filter: blur(20px) saturate(180%);
+  -webkit-backdrop-filter: blur(20px) saturate(180%);
+  border-top: 1px solid var(--xinyu-glass-border);
+}
+
+.xinyu-tabbar__inner {
+  position: relative;
+  display: flex;
+  max-width: var(--xinyu-shell);
+  height: 52px;
+  margin: 0 auto;
+  padding-bottom: constant(safe-area-inset-bottom);
+  padding-bottom: env(safe-area-inset-bottom);
+}
+
+/* 跟随选中项滑动的药丸背景 */
+.xinyu-tabbar__pill {
+  position: absolute;
+  top: 6px;
+  left: 0;
+  width: 25%;
+  height: 40px;
+  border-radius: 12px;
+  background: var(--xinyu-accent-soft);
+  transition: transform 0.34s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+.xinyu-tabbar__item {
+  position: relative;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--van-text-color-2);
+  transition: color 0.24s ease;
+  text-decoration: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.xinyu-tabbar__item .van-icon {
+  font-size: 21px;
+  transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* 切换动画：图标弹一下，文字变品牌色 */
+.xinyu-tabbar__item.active {
+  color: var(--xinyu-accent);
+}
+
+.xinyu-tabbar__item.active .van-icon {
+  transform: translateY(-1px) scale(1.16);
+}
+
+/* 路由切换时的淡入上滑，比硬切自然 */
+.page-enter-active {
+  transition: opacity 0.22s ease, transform 0.22s ease;
+}
+
+.page-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+
+/* 离场也要有，否则 mode="out-in" 会先空一帧再进新页面 */
+.page-leave-active {
+  transition: opacity 0.16s ease, transform 0.16s ease;
+}
+
+.page-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+/* ---------- 液态玻璃（Liquid Glass） ----------
+ * 结构固定为两层，弹窗和首页通知条共用，所以样式放全局、组件里只写标记：
+ *   .xinyu-liquid         外层：圆角 + 裁切 + 投影
+ *     .xinyu-liquid__stage  底层：几块慢慢漂移的彩色光斑 + 一道旋转高光
+ *     .xinyu-liquid__glass  上层：玻璃本体，用 backdrop-filter 把底层糊开
+ * 关键点是光斑放在玻璃「下面」：这样模糊有真实内容可折射，
+ * 纯灰底上也能看出流动感，而且反光不会压到文字上。
+ */
+.xinyu-liquid {
+  position: relative;
+  overflow: hidden;
+  isolation: isolate;
+  border-radius: 26px;
+  box-shadow: var(--xinyu-liquid-shadow);
+}
+
+.xinyu-liquid__stage {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.xinyu-liquid__blob {
+  position: absolute;
+  width: 64%;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  filter: blur(24px);
+  opacity: var(--xinyu-liquid-blob-opacity);
+}
+
+.xinyu-liquid__blob--a {
+  top: -22%;
+  left: -16%;
+  background: radial-gradient(circle at 35% 35%, #2dd4bf, transparent 68%);
+  animation: xinyu-liquid-drift-a 15s ease-in-out infinite;
+}
+
+.xinyu-liquid__blob--b {
+  right: -18%;
+  bottom: -28%;
+  background: radial-gradient(circle at 60% 40%, #4f9bf5, transparent 68%);
+  animation: xinyu-liquid-drift-b 19s ease-in-out infinite;
+}
+
+.xinyu-liquid__blob--c {
+  top: 20%;
+  left: 42%;
+  width: 46%;
+  background: radial-gradient(circle at 50% 50%, #fbbf24, transparent 66%);
+  animation: xinyu-liquid-drift-c 23s ease-in-out infinite;
+}
+
+/* 一圈缓慢扫过的反光，模拟液体表面的高光位移 */
+.xinyu-liquid__sheen {
+  position: absolute;
+  inset: -60%;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0deg,
+    rgba(255, 255, 255, 0.5) 36deg,
+    transparent 96deg,
+    transparent 190deg,
+    rgba(255, 255, 255, 0.32) 242deg,
+    transparent 300deg
+  );
+  animation: xinyu-liquid-sheen 18s linear infinite;
+}
+
+.xinyu-liquid__glass {
+  position: relative;
+  z-index: 1;
+  background: var(--xinyu-liquid-tint);
+  backdrop-filter: blur(var(--xinyu-liquid-blur)) saturate(190%);
+  -webkit-backdrop-filter: blur(var(--xinyu-liquid-blur)) saturate(190%);
+  box-shadow:
+    inset 0 1px 0 var(--xinyu-liquid-rim),
+    inset 0 0 0 1px var(--xinyu-liquid-edge);
+}
+
+@keyframes xinyu-liquid-drift-a {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+  50% {
+    transform: translate3d(18%, 14%, 0) scale(1.12);
+  }
+}
+
+@keyframes xinyu-liquid-drift-b {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(1.08);
+  }
+  50% {
+    transform: translate3d(-16%, -12%, 0) scale(1);
+  }
+}
+
+@keyframes xinyu-liquid-drift-c {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0) scale(0.94);
+  }
+  50% {
+    transform: translate3d(-14%, 16%, 0) scale(1.15);
+  }
+}
+
+@keyframes xinyu-liquid-sheen {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 液态玻璃弹窗背后的遮罩：压暗 + 轻微模糊，玻璃才有透出来的东西 */
+.crisis-overlay {
+  background: rgba(15, 23, 42, 0.34);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+}
+
+/* ---------- PC 适配 ----------
+ * 这套界面本来是照着手机做的：一个 560px 的窄壳子。
+ * 到了桌面如果照搬，宽屏上中间会缩成细细一条、底部抽屉横跨整屏，
+ * 所以这里统一放宽壳子宽度、把卡片列表排成多列，并给指针设备补上悬停反馈。
+ */
+@media (min-width: 1024px) {
+  :root {
+    --xinyu-shell: 880px;
+  }
+
+  .page {
+    padding: 16px 24px 96px;
+  }
+}
+
+@media (min-width: 1440px) {
+  :root {
+    --xinyu-shell: 1040px;
+  }
+}
+
+/* 卡片列表容器：只在宽屏上生效，手机保持原来的一列列表，避免顺手改掉移动端观感 */
+@media (min-width: 1024px) {
+  .xinyu-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+    gap: 10px;
+  }
+
+  /* 排成网格之后，每个格子要从「列表行」变成「卡片」：
+   * 去掉 Vant 单元格右侧那条分隔线，补上圆角和投影。 */
+  .xinyu-cards .van-cell {
+    border-radius: 12px;
+    background: var(--van-background-2);
+    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+  }
+
+  .xinyu-cards .van-cell::after {
+    display: none;
+  }
+
+  /* 只动 transform：scoped 样式里已经设了 background / box-shadow，
+   * 全局规则同优先级改不动它们，硬碰会互相打架。 */
+  .xinyu-cards > * {
+    transition: transform 0.18s ease;
+  }
+
+  .xinyu-cards > *:hover {
+    transform: translateY(-2px);
+  }
+}
+
+/* 底部 / 顶部抽屉在宽屏上不要横跨整屏，居中并限到壳子宽度。
+ * 必须补上 right: 0：Vant 只设了 left: 0，right 留在 auto 时
+ * 宽高方程是过约束的，auto 外边距会被算成 0，盒子照样贴左边。 */
+@media (min-width: 768px) {
+  .van-popup--bottom,
+  .van-popup--top {
+    right: 0;
+    left: 0;
+    max-width: var(--xinyu-shell);
+    margin-right: auto;
+    margin-left: auto;
+  }
+}
+
+/* 系统开了「减少动态效果」就停掉漂移，别让人看晕 */
+@media (prefers-reduced-motion: reduce) {
+  .xinyu-liquid__blob,
+  .xinyu-liquid__sheen {
+    animation: none;
+  }
+}

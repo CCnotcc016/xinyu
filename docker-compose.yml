@@ -1,0 +1,70 @@
+# 心语 (Xinyu) · AI 情绪日记与匿名树洞
+# Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
+# 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
+services:
+  mysql:
+    image: mysql:8.0
+    container_name: xinyu-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-root}
+      MYSQL_DATABASE: xinyu
+      TZ: Asia/Shanghai
+    command: --default-authentication-plugin=mysql_native_password --character-set-server=utf8mb4 --collation-server=utf8mb4_general_ci
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+      - ./backend/src/main/resources/db/schema.sql:/docker-entrypoint-initdb.d/01-schema.sql:ro
+      - ./backend/src/main/resources/db/data.sql:/docker-entrypoint-initdb.d/02-data.sql:ro
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -uroot -p$$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: xinyu-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+
+  backend:
+    build: ./backend
+    container_name: xinyu-backend
+    restart: unless-stopped
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_started
+    environment:
+      SPRING_PROFILES_ACTIVE: prod
+      MYSQL_HOST: mysql
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-root}
+      REDIS_HOST: redis
+      AI_API_KEY: ${AI_API_KEY:-}
+      AI_BASE_URL: ${AI_BASE_URL:-https://api.deepseek.com}
+      AI_MODEL: ${AI_MODEL:-deepseek-chat}
+      JWT_SECRET: ${JWT_SECRET:?必须在 .env 中设置 JWT_SECRET，可用 openssl rand -hex 32 生成}
+      # 头像上传目录，挂到数据卷，重建容器不丢图
+      XINYU_UPLOAD_DIR: /app/uploads
+    volumes:
+      - xinyu-uploads:/app/uploads
+    ports:
+      - "8080:8080"
+
+  frontend:
+    build: ./frontend
+    container_name: xinyu-frontend
+    restart: unless-stopped
+    depends_on:
+      - backend
+    ports:
+      - "80:80"
+
+volumes:
+  mysql-data:
+  xinyu-uploads:

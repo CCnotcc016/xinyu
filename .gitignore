@@ -1,0 +1,33 @@
+# Java / Maven
+backend/target/
+*.class
+*.jar
+!.mvn/wrapper/maven-wrapper.jar
+
+# Node
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+
+# IDE / 系统
+.idea/
+*.iml
+.vscode/
+.DS_Store
+
+# 环境变量（含密钥）—— .env 及其衍生的 .env.* 一律忽略，只保留示例文件
+.env
+.env.*
+!.env.example
+
+# 用户上传的头像 / 图片（保留目录本身）
+backend/uploads/*
+!backend/uploads/.gitkeep
+
+# 日志 / 进程文件
+*.log
+*.pid
+
+# 本机部署脚本生成的 Nginx 配置与日志（默认在 ~/.xinyu-nginx/，这里兜底）
+nginx-*.conf
+nginx-*.pid
