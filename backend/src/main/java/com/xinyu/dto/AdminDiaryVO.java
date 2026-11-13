@@ -1,9 +1,7 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.dto;
 
 import com.xinyu.entity.Diary;
+import com.xinyu.service.CrisisSupportService;
 import lombok.Data;
 
 import java.time.LocalDateTime;
@@ -46,6 +44,12 @@ public class AdminDiaryVO {
         vo.aiReply = diary.getAiReply();
         vo.aiStatus = diary.getAiStatus();
         vo.crisisSupport = crisisSupport;
+        // 命中危机词但 AI 回复还是空的（老数据 / 用户没点生成）时，兜底显示干预文案，
+        // 否则后台详情里只会看到「（还没有 AI 回复）」，等于干预内容没出现
+        if (crisisSupport && (vo.aiReply == null || vo.aiReply.isBlank())) {
+            vo.aiReply = CrisisSupportService.CRISIS_REPLY;
+            vo.aiStatus = "CRISIS";
+        }
         vo.createdAt = diary.getCreatedAt();
         return vo;
     }

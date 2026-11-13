@@ -1,9 +1,7 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.common;
 
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataAccessException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.security.access.AccessDeniedException;
@@ -61,6 +59,13 @@ public class GlobalExceptionHandler {
     @ResponseStatus(HttpStatus.FORBIDDEN)
     public Result<Void> handleAccessDenied(AccessDeniedException e) {
         return Result.fail(ErrorCode.FORBIDDEN);
+    }
+
+    /** 数据库连不上等基础设施故障：给用户一句能读懂的话，别把 SQL 细节抛出去 */
+    @ExceptionHandler(DataAccessException.class)
+    public Result<Void> handleDataAccess(DataAccessException e) {
+        log.error("数据库访问异常", e);
+        return Result.fail(ErrorCode.INTERNAL_ERROR.getCode(), "服务暂时不可用，请稍后再试");
     }
 
     @ExceptionHandler(Exception.class)

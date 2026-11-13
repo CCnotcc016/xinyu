@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.dto;
 
 import lombok.Data;
@@ -29,6 +26,12 @@ public class CrisisAlertVO {
     private String content;
     private String status;
     private String remark;
+    /** 处理人昵称（谁跟进的这条预警） */
+    private String handledByName;
     private LocalDateTime handledAt;
+    /** 最近一次回访 */
+    private LocalDateTime followUpAt;
+    private String followUpNote;
+    private String followUpByName;
     private LocalDateTime createdAt;
 }

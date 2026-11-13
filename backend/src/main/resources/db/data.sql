@@ -1,11 +1,11 @@
--- 心语 (Xinyu) · AI 情绪日记与匿名树洞
--- Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
--- 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--- 初始化数据：常用标签（不包含任何账号）
--- 说明：脚本不写死库名（没有 USE 语句），数据会插到连接指定的那个库里。
+-- 初始化数据：默认管理员 + 常用标签
+USE `xinyu`;
 
--- 说明：本仓库不预置任何账号，也没有任何默认密码。
--- 请部署后用 `bash scripts/init-admin.sh` 创建你自己的管理员（会写入 BCrypt 哈希）。
+-- 默认管理员：admin / zNc40171316（BCrypt 哈希，如需更换请重新生成）
+-- 注意：该语句仅在 admin 不存在时执行，修改此处不会影响已存在的账号
+INSERT INTO `user` (`username`, `password_hash`, `nickname`, `role`, `status`)
+SELECT 'admin', '$2a$10$VaUmLpwbPO8WUX7NPbUy9urehsdCn/OQ7K.A5xX9h06E0VpuetvZm', '系统管理员', 'ADMIN', 1
+WHERE NOT EXISTS (SELECT 1 FROM `user` WHERE `username` = 'admin');
 
 -- 情绪标签
 INSERT INTO `tag` (`name`, `type`) VALUES

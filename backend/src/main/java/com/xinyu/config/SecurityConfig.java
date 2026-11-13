@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.config;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -61,6 +58,8 @@ public class SecurityConfig {
                 // 头像等静态资源不需要登录，否则 <img> 带不上 Authorization 头
                 .requestMatchers(uploadProperties.getPublicPrefix() + "/**").permitAll()
                 .requestMatchers("/api/admin/**").hasRole("ADMIN")
+                // 客服工作台：管理员与客服（STAFF）都可以进，具体能看哪条会话由服务层判断
+                .requestMatchers("/api/staff/**").hasAnyRole("ADMIN", "STAFF")
                 .anyRequest().authenticated())
             .exceptionHandling(e -> e
                 .authenticationEntryPoint((req, res, ex) ->

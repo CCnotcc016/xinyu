@@ -1,110 +1,97 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
+import { computed, reactive } from 'vue'
+
 /**
- * 版本与更新说明。
+ * 更新说明改为运行时从 public/changelog.json 读取。
  *
- * 发版时：
- *   1. 把 APP_VERSION 递增（同时同步 package.json 里的 version）；
- *   2. 在 CHANGELOG 数组最前面插一条同版本号的记录。
- *
- * 用户关闭弹窗后，浏览器会记下「已读版本号」。只有当 APP_VERSION
- * 与已读版本号不一致时，弹窗才会再次出现 —— 也就是每次发版只提示一次。
+ * 以前版本号和更新说明写死在这个 .js 里，改一行字都要重新 npm run build、
+ * 重新打包镜像；现在只要改 changelog.json 再刷新页面就能看到。发布新版本时
+ * 记得同时改 changelog.json 里的 version 和条目，弹窗靠它对版本号。
  */
-export const APP_VERSION = '2.2.2.2048'
+const SOURCE = `${import.meta.env.BASE_URL}changelog.json`
+const CACHE_KEY = 'xinyu:changelog:cache'
 
-export const CHANGELOG = [
-  {
-    version: '2.2.2.2048',
-    date: '2026-09-30,0308CST（UTC+8）',
-    items: [
-      '修复了报错弹窗在浅色模式下的文字颜色问题',
-      '修复了部分错误',
-      '（买了四个巧克力，花了我一百大洋TAT..）',
-    ]
-  },
-  {
-    version: '2.2.1.2048',
-    date: '2026-09-29,0040CST（UTC+8）',
-    items: [
-      '修复了部分错误'
-    ]
-  },
-  {
-    version: '2.2.0.2048',
-    date: '2026-09-29,0000CST（UTC+8）',
-    items: [
-      '树洞评论支持「回复」了，点评论右边的回复按钮就能接话，回复对象会显示在内容前面',
-      '显示模式改为自己选：浅色模式 / 深色模式 / 跟随系统，选择会记住，不再只能听系统的',
-      '日记详情页新增「删除这篇日记」，不用再回列表左滑了',
-      //'后台「日记」可以按账号查看了：先选用户（支持搜索），再点「查看」看完整内容与 AI 回复',
-      '日记里再次翻到带有自残、自杀字眼的内容时，同样会弹出关怀提示，不会因为当时点掉了就再也看不到',
-      //'后台查看这些日记时也会标出危机关键词，方便和「预警」页对着处理',
-      '修复了一些错误，并对部分功能进行了优化',
-      '（貌似没有什么想写的诶，那就透露一个消息吧，聊天功能正在做了哦，下次大更新端上来吧，要先做一下联系管理员验证一下哦 TAT，谁能v我50）',
-    ]
-  },
-  {
-    version: '2.1.0.1024',
-    date: '2026-09-28,2255CST（UTC+8）',
-    items: [
-      '「🧊 界面细节：液态玻璃」',
-      '适配了PC端浏览器，现在你可以在电脑上访问我们的网站了',
-      '修复了部分手机📱浏览器下的兼容性问题',
-      '修复了部分电脑💻浏览器下的兼容性问题',
-      '更改了部分弹窗的样式',
-      '修复了一些错误，并对部分功能进行了优化',
-      '（买了好多好多零食还有一些茶酒，ovo）',
-    ]
-  },
-  {
-    version: '2.0',
-    date: '2026-09-28',
-    items: [
-      '安全组件全面升级：注册需手机号 + 短信验证码，发验证码前要通过图形人机验证，接口加限流',
-      '手机号、密码、昵称、头像统一收进「设置」，支持修改密码、更换绑定手机号',
-      '昵称审核：禁止使用国家领导人姓名及涉黄、涉赌、涉毒等违规昵称',
-      '树洞与日记中出现自残、自杀等字眼时，会先弹出关怀提示，并同步提醒管理员跟进',
-      '后台新增「预警」页：管理员可看到求助内容与用户注册时填写的手机号，及时干预',
-      '修复：树洞屏蔽词误伤正常发言、日记天气/场景选择器不可用、AI 陪伴偶发无响应',
-      '性能优化：列表首屏加载更快，趋势图切换更顺滑，长列表滚动掉帧明显减少',
-      '界面更新：底部导航换成毛玻璃 + 滑动指示器并带切换动画，弹窗统一磨砂玻璃质感',
-      '注册页文字配色由紫色改为青绿色，深色模式下更护眼',
-      '（喝了4瓶小酒。）'
-    ]
-  },
-  {
-    version: '1.1.1',
-    date: '2026-09-27',
-    items: [
-      '「我的」页面可以修改昵称了，改完立即生效',
-      '新增深色模式，自动跟随手机 / 电脑的系统设置，趋势图也会跟着变色'
-    ]
-  },
-  {
-    version: '1.1.0',
-    date: '2026-09-27',
-    items: [
-      '新增更新说明弹窗，重要改动不再错过',
-      '后台用户管理支持删除账号，并自动清理该账号的日记、帖子、评论等数据',
-      '防止管理员误禁用或误删自己，系统始终保留至少一个可用管理员',
-      '修复日记页天气、场景选择器无法使用的问题'
-    ]
-  },
-  {
-    version: '1.0.0',
-    date: '2026-09-20',
-    items: [
-      '情绪日记：记录心情、天气、场景与隐私级别',
-      'AI 共情回复与情绪评分，支持流式输出',
-      '情绪趋势折线图与分布饼图',
-      '匿名树洞：发帖、点赞、评论',
-      '举报与后台审核'
-    ]
-  }
-]
+/** 全局共享状态，组件直接读它，加载完成后自动响应式刷新 */
+export const changelog = reactive({
+  version: '',
+  entries: [],
+  loaded: false,
+})
 
-/** 取当前版本的更新说明；没有对应记录时返回 null */
-export function currentNotice() {
-  return CHANGELOG.find((item) => item.version === APP_VERSION) || null
+/** 「我的」页、设置页展示的版本号，读不到时给个占位符，别显示 vundefined */
+export const versionLabel = computed(() => (changelog.version ? `v${changelog.version}` : '—'))
+
+let pending = null
+
+function isEntry(entry) {
+  return !!entry && typeof entry === 'object' && typeof entry.version === 'string' && Array.isArray(entry.items)
 }
+
+/** 校验并裁剪成内部结构，格式不对时返回 null，让调用方走兜底 */
+function parse(raw) {
+  if (!raw || typeof raw !== 'object') return null
+  const version = typeof raw.version === 'string' ? raw.version.trim() : ''
+  const entries = Array.isArray(raw.changelog) ? raw.changelog.filter(isEntry) : []
+  if (!version || !entries.length) return null
+  return { version, entries }
+}
+
+function apply(data) {
+  changelog.version = data.version
+  changelog.entries.splice(0, changelog.entries.length, ...data.entries)
+  changelog.loaded = true
+}
+
+function readCache() {
+  try {
+    const raw = localStorage.getItem(CACHE_KEY)
+    return raw ? parse(JSON.parse(raw)) : null
+  } catch {
+    return null
+  }
+}
+
+function writeCache(data) {
+  try {
+    localStorage.setItem(CACHE_KEY, JSON.stringify({ version: data.version, changelog: data.entries }))
+  } catch {
+    // 隐私模式下不可写，忽略；断网时就只能退化成没有更新说明
+  }
+}
+
+async function fetchChangelog() {
+  try {
+    const res = await fetch(SOURCE, { cache: 'no-store' })
+    if (!res.ok) throw new Error(`HTTP ${res.status}`)
+    const data = parse(await res.json())
+    if (!data) throw new Error('changelog.json 格式不正确')
+    apply(data)
+    writeCache(data)
+    return data
+  } catch (err) {
+    // 断网或文件缺失时用上次成功读取的副本，至少历史说明还能翻
+    const cached = readCache()
+    if (cached) {
+      apply(cached)
+      console.warn('[changelog] 读取 changelog.json 失败，改用本地缓存：', err.message)
+      return cached
+    }
+    changelog.loaded = true
+    pending = null // 允许下次进入或刷新时重试
+    console.warn('[changelog] 无法读取 changelog.json：', err.message)
+    return { version: '', entries: [] }
+  }
+}
+
+/** 全局只发一次请求，重复调用复用同一个 promise */
+export function loadChangelog() {
+  if (!pending) pending = fetchChangelog()
+  return pending
+}
+
+/** 当前版本对应的那条更新说明；没写就返回 null（此时不弹窗，也不记为已读） */
+export function currentNotice() {
+  return changelog.entries.find((entry) => entry.version === changelog.version) || null
+}
+
+// 一进页面就开始取，弹窗判定、版本号展示都不用各自等
+loadChangelog()

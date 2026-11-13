@@ -1,20 +1,21 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <div>
     <van-search v-model="keyword" placeholder="按用户名搜索" @search="onSearch" />
     <van-list v-model:loading="loading" v-model:error="error" :finished="finished" finished-text="没有更多了" error-text="加载失败，点击重新加载" @load="onLoad">
       <van-cell v-for="u in users" :key="u.id" :title="u.nickname || u.username" :label="`@${u.username} · ${u.role}`">
         <template #value>
-          <van-tag :type="u.status === 1 ? 'success' : 'danger'">
-            {{ u.status === 1 ? '正常' : '禁用' }}
-          </van-tag>
+          <div class="tags">
+            <van-tag :type="u.status === 1 ? 'success' : 'danger'">
+              {{ u.status === 1 ? '正常' : '禁用' }}
+            </van-tag>
+            <van-tag v-if="isLocked(u)" type="warning">已锁定</van-tag>
+          </div>
         </template>
         <template #right-icon>
           <div class="ops">
+            <van-button v-if="isLocked(u)" size="small" type="primary" @click="unlock(u)">
+              解锁
+            </van-button>
             <van-button
               size="small"
               :type="u.status === 1 ? 'danger' : 'success'"
@@ -33,7 +34,7 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
 <script setup>
 import { ref } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
-import { listUsers, updateUserStatus, deleteUser } from '../../api/admin'
+import { listUsers, updateUserStatus, deleteUser, unlockUser } from '../../api/admin'
 
 const users = ref([])
 const page = ref(1)
@@ -71,6 +72,18 @@ function onSearch() {
   onLoad()
 }
 
+/** 连续密码错误被临时锁定：locked_until 还在未来才算锁定中 */
+function isLocked(u) {
+  return !!u.lockedUntil && new Date(u.lockedUntil).getTime() > Date.now()
+}
+
+async function unlock(u) {
+  await unlockUser(u.id)
+  u.lockedUntil = null
+  u.failedAttempts = 0
+  showToast('已解除锁定')
+}
+
 async function toggle(u) {
   const next = u.status === 1 ? 0 : 1
   await updateUserStatus(u.id, next)
@@ -90,6 +103,11 @@ async function remove(u) {
 </script>
 
 <style scoped>
+.tags {
+  display: flex;
+  gap: 4px;
+  justify-content: flex-end;
+}
 .ops {
   display: flex;
   gap: 6px;

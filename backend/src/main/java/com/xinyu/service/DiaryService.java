@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -9,10 +6,14 @@ import com.xinyu.ai.AiService;
 import com.xinyu.common.BusinessException;
 import com.xinyu.common.ErrorCode;
 import com.xinyu.common.PageResult;
+import com.xinyu.dto.CalendarVO;
 import com.xinyu.dto.DiaryRequest;
 import com.xinyu.dto.DiaryVO;
 import com.xinyu.dto.DistributionVO;
+import com.xinyu.dto.EmotionInsightVO;
+import com.xinyu.dto.RecapVO;
 import com.xinyu.dto.TrendPoint;
+import com.xinyu.dto.WeeklyReportVO;
 import com.xinyu.entity.CrisisAlert;
 import com.xinyu.entity.Diary;
 import com.xinyu.entity.DiaryTag;
@@ -21,11 +22,13 @@ import com.xinyu.mapper.DiaryMapper;
 import com.xinyu.mapper.DiaryTagMapper;
 import com.xinyu.mapper.TagMapper;
 import lombok.RequiredArgsConstructor;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -42,6 +45,8 @@ import java.util.stream.Collectors;
 public class DiaryService {
 
     private static final List<String> PRIVACY_LEVELS = List.of("PRIVATE", "PUBLIC");
+    /** 回收站保留天数 */
+    private static final int TRASH_RETENTION_DAYS = 7;
 
     private final DiaryMapper diaryMapper;
     private final DiaryTagMapper diaryTagMapper;
@@ -49,11 +54,21 @@ public class DiaryService {
     private final AiService aiService;
     private final RateLimitService rateLimitService;
     private final StatsService statsService;
+    private final WeeklyReportService weeklyReportService;
     private final CrisisSupportService crisisSupportService;
     private final CrisisAlertService crisisAlertService;
 
     @Transactional
     public DiaryVO create(Long userId, DiaryRequest req) {
+        // 离线补传：App 没网时先本地存一份，联网后带着同一个 client_uid 重传。
+        // 重传可能来自「超时重试」或用户手动点同步，先查一次已存的那条，避免写成两篇。
+        String clientUid = StringUtils.hasText(req.getClientUid()) ? req.getClientUid().trim() : null;
+        if (clientUid != null) {
+            Diary existed = diaryMapper.selectByClientUid(userId, clientUid);
+            if (existed != null) {
+                return toVO(existed);
+            }
+        }
         Diary diary = new Diary();
         diary.setUserId(userId);
         diary.setContent(req.getContent());
@@ -61,13 +76,21 @@ public class DiaryService {
         diary.setScene(req.getScene());
         diary.setPrivacy(normalizePrivacy(req.getPrivacy()));
         diary.setAiStatus("PENDING");
-        diaryMapper.insert(diary);
+        diary.setClientUid(clientUid);
+        try {
+            diaryMapper.insert(diary);
+        } catch (DuplicateKeyException e) {
+            // 两个请求几乎同时到达（例如重试和手动同步撞上）：唯一索引兜底，
+            // 直接把先落库的那条返回给调用方，客户端会认为同步成功
+            Diary existed = clientUid == null ? null : diaryMapper.selectByClientUid(userId, clientUid);
+            if (existed != null) {
+                return toVO(existed);
+            }
+            throw e;
+        }
         saveEmotionTags(diary.getId(), req.getEmotionTags());
-        DiaryVO vo = toVO(diary);
-        // 危机表达在这里就记录：日记是私密的，用户不一定还会去点「生成 AI 回复」，
-        // 只挂在 SSE 那一步的话管理员可能永远收不到预警。
-        noteCrisis(userId, diary.getId(), req.getContent());
-        return vo;
+        applyCrisisReply(diary);
+        return toVO(diary);
     }
 
     public PageResult<DiaryVO> page(Long userId, long page, long size, LocalDateTime start, LocalDateTime end) {
@@ -107,11 +130,14 @@ public class DiaryService {
 
         diaryTagMapper.delete(new LambdaQueryWrapper<DiaryTag>().eq(DiaryTag::getDiaryId, id));
         saveEmotionTags(id, req.getEmotionTags());
-        DiaryVO vo = toVO(diary);
-        noteCrisis(userId, id, req.getContent());
-        return vo;
+        applyCrisisReply(diary);
+        return toVO(diary);
     }
 
+    /**
+     * 删除进回收站。tags 保留不动，恢复之后情绪标签还在。
+     * 逻辑删除由 Diary 上的 @TableLogic 完成（UPDATE deleted_at = NOW()）。
+     */
     @Transactional
     public void delete(Long userId, Long id) {
         Diary diary = requireDiary(id);
@@ -119,7 +145,52 @@ public class DiaryService {
             throw new BusinessException(ErrorCode.FORBIDDEN);
         }
         diaryMapper.deleteById(id);
+    }
+
+    /** 回收站列表；顺手清掉超过保留期的记录 */
+    public List<DiaryVO> trash(Long userId) {
+        purgeExpired(userId);
+        List<Diary> list = diaryMapper.selectTrash(userId);
+        Map<Long, List<String>> tagMap = loadEmotionTagsBatch(
+                list.stream().map(Diary::getId).toList());
+        return list.stream()
+                .map(d -> toVO(d, tagMap.getOrDefault(d.getId(), Collections.emptyList())))
+                .toList();
+    }
+
+    @Transactional
+    public DiaryVO restore(Long userId, Long id) {
+        Diary diary = requireTrashed(userId, id);
+        diaryMapper.restoreById(id);
+        diary.setDeletedAt(null);
+        return toVO(diary);
+    }
+
+    /** 永久删除：回收站里点「彻底删除」，或超过保留期自动清理 */
+    @Transactional
+    public void purge(Long userId, Long id) {
+        requireTrashed(userId, id);
+        diaryMapper.purgeById(id);
         diaryTagMapper.delete(new LambdaQueryWrapper<DiaryTag>().eq(DiaryTag::getDiaryId, id));
+    }
+
+    private Diary requireTrashed(Long userId, Long id) {
+        Diary diary = diaryMapper.selectTrashed(id);
+        if (diary == null) {
+            throw new BusinessException(ErrorCode.DIARY_NOT_FOUND);
+        }
+        if (!diary.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN);
+        }
+        return diary;
+    }
+
+    private void purgeExpired(Long userId) {
+        LocalDateTime before = LocalDateTime.now().minusDays(TRASH_RETENTION_DAYS);
+        for (Long id : diaryMapper.selectExpiredIds(userId, before)) {
+            diaryMapper.purgeById(id);
+            diaryTagMapper.delete(new LambdaQueryWrapper<DiaryTag>().eq(DiaryTag::getDiaryId, id));
+        }
     }
 
     public SseEmitter aiReplyStream(Long userId, Long id) {
@@ -135,20 +206,46 @@ public class DiaryService {
         return emitter;
     }
 
-    public List<TrendPoint> trend(Long userId, String range) {
-        return statsService.trend(userId, range);
+    public List<TrendPoint> trend(Long userId, String range, LocalDate end) {
+        return statsService.trend(userId, range, end);
     }
 
     public DistributionVO distribution(Long userId) {
         return statsService.distribution(userId);
     }
 
-    /** 命中危机词时给管理员记一条预警（前端弹不弹关怀提示由 VO 上的 crisisSupport 决定） */
-    private void noteCrisis(Long userId, Long diaryId, String content) {
-        if (!crisisSupportService.containsCrisis(content)) {
+    public EmotionInsightVO insights(Long userId) {
+        return statsService.insights(userId);
+    }
+
+    public CalendarVO calendar(Long userId, int days) {
+        return statsService.calendar(userId, days);
+    }
+
+    public RecapVO recap(Long userId, String period, LocalDate anchor) {
+        return statsService.recap(userId, period, anchor);
+    }
+
+    public WeeklyReportVO weeklyReport(Long userId, LocalDate weekStart, boolean refresh) {
+        return weeklyReportService.weekly(userId, weekStart, refresh);
+    }
+
+    /**
+     * 命中危机词时立刻把危机干预回复写进日记，并给管理员记一条预警。
+     * 日记是私密的，用户很可能不会再去点「生成 AI 回复」——只挂在 SSE 那一步的话，
+     * 关怀弹窗关掉之后详情页什么都没有，干预文案等于没显示出来。
+     */
+    private void applyCrisisReply(Diary diary) {
+        if (!crisisSupportService.containsCrisis(diary.getContent())) {
             return;
         }
-        crisisAlertService.record(userId, CrisisAlert.TARGET_DIARY, diaryId, content);
+        if (!"CRISIS".equals(diary.getAiStatus())) {
+            diary.setAiStatus("CRISIS");
+            diary.setAiReply(CrisisSupportService.CRISIS_REPLY);
+            diaryMapper.updateById(diary);
+        }
+        crisisAlertService.record(diary.getUserId(), CrisisAlert.TARGET_DIARY,
+                diary.getId(), diary.getContent());
     }
 
     private Diary requireDiary(Long id) {
@@ -208,7 +305,14 @@ public class DiaryService {
     private DiaryVO toVO(Diary diary, List<String> emotionTags) {
         DiaryVO vo = DiaryVO.from(diary, emotionTags);
         // 详情 / 列表也要带上关怀标记，用户重新翻到这篇日记时同样能看到提示
-        vo.setCrisisSupport(crisisSupportService.containsCrisis(diary.getContent()));
+        boolean crisis = crisisSupportService.containsCrisis(diary.getContent());
+        vo.setCrisisSupport(crisis);
+        // 兜底：老数据（命中了危机词但当时还没落库干预文案）也要能把干预内容显示出来，
+        // 否则详情页只有一句「让 AI 陪你说说话」，等于关怀提示没出现
+        if (crisis && (diary.getAiReply() == null || diary.getAiReply().isBlank())) {
+            vo.setAiStatus("CRISIS");
+            vo.setAiReply(CrisisSupportService.CRISIS_REPLY);
+        }
         return vo;
     }
 

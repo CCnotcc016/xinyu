@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 自适应图标底色：白底，和第一次打包时的白色圆角卡配套 -->
+    <color name="ic_launcher_background">#FFFFFF</color>
+</resources>

@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -10,6 +7,7 @@ import com.xinyu.common.ErrorCode;
 import com.xinyu.common.PageResult;
 import com.xinyu.dto.CrisisAlertHandleRequest;
 import com.xinyu.dto.CrisisAlertVO;
+import com.xinyu.dto.CrisisFollowUpRequest;
 import com.xinyu.entity.CrisisAlert;
 import com.xinyu.entity.User;
 import com.xinyu.mapper.CrisisAlertMapper;
@@ -23,6 +21,7 @@ import org.springframework.util.StringUtils;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -91,6 +90,31 @@ public class CrisisAlertService {
         }
     }
 
+    /**
+     * 直接记一条预警，不经过关键词判断。
+     *
+     * <p>心理自评第 9 题（自伤 / 自杀念头）选到非零时用它：量表里没有自由文本，
+     * 关键词匹配不上，但这一题的阳性本身就是需要跟进的信息。</p>
+     */
+    public void recordRisk(Long userId, String targetType, Long targetId, String reason, String content) {
+        if (userId == null || targetId == null) {
+            return;
+        }
+        try {
+            CrisisAlert alert = new CrisisAlert();
+            alert.setUserId(userId);
+            alert.setTargetType(targetType);
+            alert.setTargetId(targetId);
+            alert.setKeyword(reason);
+            alert.setContent(excerpt(content));
+            alert.setStatus(CrisisAlert.STATUS_PENDING);
+            alertMapper.insert(alert);
+            log.warn("危机预警：user={} target={}#{} 触发 {}", userId, targetType, targetId, reason);
+        } catch (Exception e) {
+            log.error("危机预警记录失败: {}", e.getMessage());
+        }
+    }
+
     public PageResult<CrisisAlertVO> list(String status, long page, long size) {
         Page<CrisisAlert> result = alertMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<CrisisAlert>()
@@ -99,8 +123,20 @@ public class CrisisAlertService {
                         .orderByDesc(CrisisAlert::getCreatedAt));
         Map<Long, User> users = users(result.getRecords().stream()
                 .map(CrisisAlert::getUserId).distinct().toList());
+        // 处理人 / 回访人单独查一次：预警的 user_id 是「被关心的人」，不是处理人
+        List<Long> staffIds = new java.util.ArrayList<>();
+        for (CrisisAlert alert : result.getRecords()) {
+            if (alert.getHandledBy() != null) {
+                staffIds.add(alert.getHandledBy());
+            }
+            if (alert.getFollowUpBy() != null) {
+                staffIds.add(alert.getFollowUpBy());
+            }
+        }
+        Map<Long, User> staff = users(staffIds.stream().distinct().toList());
         List<CrisisAlertVO> records = result.getRecords().stream()
-                .map(a -> toVO(a, users.get(a.getUserId())))
+                .map(a -> toVO(a, pick(users, a.getUserId()),
+                        pick(staff, a.getHandledBy()), pick(staff, a.getFollowUpBy())))
                 .toList();
         return PageResult.of(result.getTotal(), page, size, records);
     }
@@ -128,7 +164,28 @@ public class CrisisAlertService {
         alertMapper.updateById(alert);
     }
 
-    private CrisisAlertVO toVO(CrisisAlert alert, User user) {
+    /**
+     * 回访：处理完之后再记一次「联系上了吗、状态如何」。
+     *
+     * <p>只允许对已处理的预警回访 —— 待跟进的本来就还没接手，
+     * 先处理、再回访，顺序反了会让跟进记录失去意义。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void followUp(Long adminId, Long id, CrisisFollowUpRequest req) {
+        CrisisAlert alert = alertMapper.selectById(id);
+        if (alert == null) {
+            throw new BusinessException(ErrorCode.CRISIS_ALERT_NOT_FOUND);
+        }
+        if (CrisisAlert.STATUS_PENDING.equals(alert.getStatus())) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST);
+        }
+        alert.setFollowUpAt(LocalDateTime.now());
+        alert.setFollowUpNote(req.getNote() == null ? null : req.getNote().trim());
+        alert.setFollowUpBy(adminId);
+        alertMapper.updateById(alert);
+    }
+
+    private CrisisAlertVO toVO(CrisisAlert alert, User user, User handler, User followUpBy) {
         CrisisAlertVO vo = new CrisisAlertVO();
         vo.setId(alert.getId());
         vo.setUserId(alert.getUserId());
@@ -138,7 +195,17 @@ public class CrisisAlertService {
         vo.setContent(alert.getContent());
         vo.setStatus(alert.getStatus());
         vo.setRemark(alert.getRemark());
+        if (handler != null) {
+            vo.setHandledByName(handler.getNickname() != null && !handler.getNickname().isBlank()
+                    ? handler.getNickname() : handler.getUsername());
+        }
         vo.setHandledAt(alert.getHandledAt());
+        vo.setFollowUpAt(alert.getFollowUpAt());
+        vo.setFollowUpNote(alert.getFollowUpNote());
+        if (followUpBy != null) {
+            vo.setFollowUpByName(StringUtils.hasText(followUpBy.getNickname())
+                    ? followUpBy.getNickname() : followUpBy.getUsername());
+        }
         vo.setCreatedAt(alert.getCreatedAt());
         if (user != null) {
             vo.setUsername(user.getUsername());
@@ -157,11 +224,20 @@ public class CrisisAlertService {
                 .collect(Collectors.toMap(User::getId, u -> u, (a, b) -> a));
     }
 
+    /** Map.of() 是不可变 Map，get(null) 会直接抛 NPE，所以查表前先挡掉空 key */
+    private static User pick(Map<Long, User> map, Long id) {
+        return id == null ? null : map.get(id);
+    }
+
     private String excerpt(String content) {
         if (content == null) {
             return null;
         }
         String trimmed = content.trim();
-        return trimmed.length() <= EXCERPT_LENGTH ? trimmed : trimmed.substring(0, EXCERPT_LENGTH) + "…";
+        // 列宽是 varchar(500)，省略号也占一位：多出来的这一个字符会让整条预警写不进去，
+        // 而写失败是被吞掉的（预警不能影响用户发日记），结果就是长日记静默漏预警。
+        return trimmed.length() <= EXCERPT_LENGTH
+                ? trimmed
+                : trimmed.substring(0, EXCERPT_LENGTH - 1) + "…";
     }
 }

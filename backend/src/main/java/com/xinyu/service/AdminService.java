@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -19,6 +16,8 @@ import com.xinyu.entity.EmotionDailyStat;
 import com.xinyu.entity.PostComment;
 import com.xinyu.entity.PostLike;
 import com.xinyu.entity.Report;
+import com.xinyu.entity.SupportConversation;
+import com.xinyu.entity.SupportMessage;
 import com.xinyu.entity.TreeholePost;
 import com.xinyu.entity.User;
 import com.xinyu.mapper.CrisisAlertMapper;
@@ -28,6 +27,8 @@ import com.xinyu.mapper.EmotionDailyStatMapper;
 import com.xinyu.mapper.PostCommentMapper;
 import com.xinyu.mapper.PostLikeMapper;
 import com.xinyu.mapper.ReportMapper;
+import com.xinyu.mapper.SupportConversationMapper;
+import com.xinyu.mapper.SupportMessageMapper;
 import com.xinyu.mapper.TreeholePostMapper;
 import com.xinyu.mapper.UserMapper;
 import com.xinyu.security.SecurityUtil;
@@ -60,7 +61,11 @@ public class AdminService {
     private final PostLikeMapper likeMapper;
     private final ReportMapper reportMapper;
     private final CrisisAlertMapper crisisAlertMapper;
+    private final SupportConversationMapper conversationMapper;
+    private final SupportMessageMapper messageMapper;
     private final CrisisSupportService crisisSupportService;
+    private final AccountPurgeService accountPurgeService;
+    private final NotificationService notificationService;
 
     public PageResult<UserVO> listUsers(long page, long size, String keyword) {
         Page<User> result = userMapper.selectPage(new Page<>(page, size),
@@ -83,10 +88,22 @@ public class AdminService {
         userMapper.updateById(user);
     }
 
+    /** 解除登录锁定：清空失败次数与锁定时间（用户被锁时后台手动放行） */
+    public void unlockUser(Long id) {
+        User user = userMapper.selectById(id);
+        if (user == null) {
+            throw new BusinessException(ErrorCode.USER_NOT_FOUND);
+        }
+        userMapper.update(null, new LambdaUpdateWrapper<User>()
+                .eq(User::getId, id)
+                .set(User::getFailedAttempts, 0)
+                .set(User::getLockedUntil, null));
+        log.info("管理员解除了用户 {} 的登录锁定", id);
+    }
+
     /**
-     * 删除用户，并级联清理其产生的全部数据：日记、日记标签、情绪统计、
-     * 树洞帖子及其评论/点赞、该用户发出的评论与点赞、相关举报记录。
-     * 删除评论/点赞后会同步修正受影响帖子的计数。
+     * 删除用户：级联清理见 {@link AccountPurgeService}（后台删除与用户自助注销共用一套逻辑）。
+     * 这里只保留管理端的保护规则：不能删自己、不能删掉最后一个管理员。
      */
     @Transactional
     public void deleteUser(Long id) {
@@ -100,61 +117,7 @@ public class AdminService {
         if (isAdmin(user) && enabledAdminCount() <= 1) {
             throw new BusinessException(ErrorCode.LAST_ADMIN);
         }
-
-        List<Long> diaryIds = diaryMapper.selectList(new LambdaQueryWrapper<Diary>()
-                        .eq(Diary::getUserId, id)).stream().map(Diary::getId).toList();
-        if (!diaryIds.isEmpty()) {
-            diaryTagMapper.delete(new LambdaQueryWrapper<DiaryTag>().in(DiaryTag::getDiaryId, diaryIds));
-            reportMapper.delete(new LambdaQueryWrapper<Report>()
-                    .eq(Report::getTargetType, "DIARY").in(Report::getTargetId, diaryIds));
-        }
-        diaryMapper.delete(new LambdaQueryWrapper<Diary>().eq(Diary::getUserId, id));
-        statMapper.delete(new LambdaQueryWrapper<EmotionDailyStat>().eq(EmotionDailyStat::getUserId, id));
-
-        List<Long> postIds = postMapper.selectList(new LambdaQueryWrapper<TreeholePost>()
-                        .eq(TreeholePost::getUserId, id)).stream().map(TreeholePost::getId).toList();
-        if (!postIds.isEmpty()) {
-            commentMapper.delete(new LambdaQueryWrapper<PostComment>().in(PostComment::getPostId, postIds));
-            likeMapper.delete(new LambdaQueryWrapper<PostLike>().in(PostLike::getPostId, postIds));
-            reportMapper.delete(new LambdaQueryWrapper<Report>()
-                    .eq(Report::getTargetType, "POST").in(Report::getTargetId, postIds));
-        }
-        postMapper.delete(new LambdaQueryWrapper<TreeholePost>().eq(TreeholePost::getUserId, id));
-
-        // 该用户对他人帖子留下的评论 / 点赞：删掉后帖子计数要跟着减
-        List<PostComment> ownComments = commentMapper.selectList(new LambdaQueryWrapper<PostComment>()
-                .eq(PostComment::getUserId, id));
-        if (!ownComments.isEmpty()) {
-            List<Long> commentIds = ownComments.stream().map(PostComment::getId).toList();
-            commentMapper.delete(new LambdaQueryWrapper<PostComment>().in(PostComment::getId, commentIds));
-            reportMapper.delete(new LambdaQueryWrapper<Report>()
-                    .eq(Report::getTargetType, "COMMENT").in(Report::getTargetId, commentIds));
-            Map<Long, Long> perPost = ownComments.stream()
-                    .collect(Collectors.groupingBy(PostComment::getPostId, Collectors.counting()));
-            perPost.forEach((postId, n) -> postMapper.update(null, new LambdaUpdateWrapper<TreeholePost>()
-                    .eq(TreeholePost::getId, postId)
-                    .setSql("comment_count = GREATEST(comment_count - " + n + ", 0)")));
-        }
-
-        List<PostLike> ownLikes = likeMapper.selectList(new LambdaQueryWrapper<PostLike>()
-                .eq(PostLike::getUserId, id));
-        if (!ownLikes.isEmpty()) {
-            likeMapper.delete(new LambdaQueryWrapper<PostLike>().eq(PostLike::getUserId, id));
-            Map<Long, Long> perPost = ownLikes.stream()
-                    .collect(Collectors.groupingBy(PostLike::getPostId, Collectors.counting()));
-            perPost.forEach((postId, n) -> postMapper.update(null, new LambdaUpdateWrapper<TreeholePost>()
-                    .eq(TreeholePost::getId, postId)
-                    .setSql("like_count = GREATEST(like_count - " + n + ", 0)")));
-        }
-
-        reportMapper.delete(new LambdaQueryWrapper<Report>()
-                .eq(Report::getReporterId, id)
-                .or(w -> w.eq(Report::getTargetType, "USER").eq(Report::getTargetId, id)));
-
-        // 账号注销后，危机预警里的内容摘要与手机号也不应继续留在后台
-        crisisAlertMapper.delete(new LambdaQueryWrapper<CrisisAlert>().eq(CrisisAlert::getUserId, id));
-
-        userMapper.deleteById(id);
+        accountPurgeService.purge(id);
     }
 
     private boolean isDisabling(Integer status) {
@@ -260,9 +223,12 @@ public class AdminService {
         commentMapper.updateById(comment);
     }
 
-    public PageResult<ReportVO> listReports(long page, long size) {
+    public PageResult<ReportVO> listReports(long page, long size, String status) {
+        String normalized = StringUtils.hasText(status) ? status.trim().toUpperCase() : null;
         Page<Report> result = reportMapper.selectPage(new Page<>(page, size),
-                new LambdaQueryWrapper<Report>().orderByDesc(Report::getCreatedAt));
+                new LambdaQueryWrapper<Report>()
+                        .eq(normalized != null, Report::getStatus, normalized)
+                        .orderByDesc(Report::getCreatedAt));
         List<Report> reports = result.getRecords();
         // 举报人和目标内容都批量取，避免每条举报查 2 次库
         Map<Long, String> reporterNames = reporterNames(reports.stream()
@@ -277,8 +243,14 @@ public class AdminService {
         return PageResult.of(result.getTotal(), page, size, records);
     }
 
+    /** 后台红点：待处理的举报数 */
+    public long reportPendingCount() {
+        return reportMapper.selectCount(new LambdaQueryWrapper<Report>()
+                .eq(Report::getStatus, "PENDING"));
+    }
+
     @Transactional
-    public void handleReport(Long id, String action) {
+    public void handleReport(Long id, String action, String remark) {
         Report report = reportMapper.selectById(id);
         if (report == null) {
             throw new BusinessException(ErrorCode.REPORT_NOT_FOUND);
@@ -287,10 +259,18 @@ public class AdminService {
         if (!List.of("PENDING", "HANDLED", "DISMISSED").contains(status)) {
             throw new BusinessException(ErrorCode.BAD_REQUEST);
         }
+        String before = report.getStatus();
         report.setStatus(status);
+        if (remark != null && !remark.isBlank()) {
+            report.setRemark(remark.length() > 255 ? remark.substring(0, 255) : remark);
+        }
         reportMapper.updateById(report);
         if ("HANDLED".equals(status)) {
             downTarget(report);
+        }
+        // 状态真的变了才发回执，重复点「处理」不会刷屏
+        if (!status.equals(before)) {
+            notificationService.onReportResult(report.getReporterId(), report.getId(), status, remark);
         }
     }
 

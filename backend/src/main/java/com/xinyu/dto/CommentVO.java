@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.dto;
 
 import com.xinyu.entity.PostComment;
@@ -21,6 +18,10 @@ public class CommentVO {
     private String content;
     private String nickname;
     private Boolean mine;
+    /** 是否被贴主置顶（置顶的评论排在列表最前） */
+    private Boolean pinned;
+    /** 当前查看者是不是贴主 —— 是才有权置顶/取消置顶（可以置顶别人的评论） */
+    private Boolean canPin;
     private LocalDateTime createdAt;
 
     public static CommentVO from(PostComment comment, String nickname, boolean mine, String replyToNickname) {
@@ -33,6 +34,8 @@ public class CommentVO {
         vo.content = comment.getContent();
         vo.nickname = nickname;
         vo.mine = mine;
+        vo.pinned = comment.getPinnedAt() != null;
+        vo.canPin = false;
         vo.createdAt = comment.getCreatedAt();
         return vo;
     }

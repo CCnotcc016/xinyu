@@ -1,0 +1,20 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="600" height="600" viewBox="0 0 600 600">
+  <defs>
+    <linearGradient id="g3" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#0f172a"/>
+      <stop offset="60%" stop-color="#1e293b"/>
+      <stop offset="100%" stop-color="#334155"/>
+    </linearGradient>
+  </defs>
+  <rect width="600" height="600" fill="url(#g3)"/>
+  <circle cx="450" cy="130" r="58" fill="#fef9c3" opacity="0.9"/>
+  <g fill="#e2e8f0" opacity="0.85">
+    <circle cx="90" cy="110" r="4"/><circle cx="180" cy="70" r="3"/><circle cx="260" cy="150" r="4"/>
+    <circle cx="330" cy="90" r="3"/><circle cx="120" cy="210" r="3"/><circle cx="390" cy="230" r="4"/>
+  </g>
+  <rect x="0" y="430" width="600" height="170" fill="#0b1220" opacity="0.85"/>
+  <path d="M120 430 L120 470 M120 470 L100 520 M120 470 L145 515" stroke="#0b1220" stroke-width="10" fill="none" opacity="0.9"/>
+  <path d="M150 430 C160 360 230 340 250 300 C265 270 240 250 255 225" stroke="#0b1220" stroke-width="12" fill="none" opacity="0.9"/>
+  <text x="48" y="120" font-family="PingFang SC,Helvetica,Arial" font-size="46" fill="#f8fafc" opacity="0.9">夜里睡不着</text>
+  <text x="48" y="176" font-family="PingFang SC,Helvetica,Arial" font-size="24" fill="#f8fafc" opacity="0.6">写下来，就少想一点</text>
+</svg>

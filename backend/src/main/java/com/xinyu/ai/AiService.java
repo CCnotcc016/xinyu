@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.ai;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -53,6 +50,38 @@ public class AiService {
               emotion_label（一个中文情绪标签，例如：开心、平静、焦虑、低落、愤怒、疲惫、孤独）、
               suggestion（一句具体、可执行的小建议）。
             从第二行开始输出共情回复正文：先共情用户的感受，再给予温和的陪伴与支持，2-4 句话，温暖自然。
+            """;
+
+    /**
+     * AI 情绪周报的系统提示词。
+     * 只发统计数据、不发日记正文：回顾一周不需要把用户的原话再上传一次。
+     */
+    private static final String WEEKLY_SYSTEM_PROMPT = """
+            你是一个温暖、克制的情绪陪伴者，正在帮用户回顾这一周。
+            根据给出的统计数据写一段 3-5 句的周报，要求：
+            1. 先客观复述这一周的状态（写了几次、情绪大致如何、有没有起伏），不要编造数据之外的信息；
+            2. 指出一个值得留意的变化（变好或变差都要温柔地说），不要吓唬用户；
+            3. 结尾给一个具体、可执行的小建议；
+            4. 不要做医学诊断，不要提「抑郁」「焦虑症」等病名，不要说教，不要用「你应该」开头的句子。
+            只输出正文，不要标题，不要 markdown 符号。
+            """;
+
+    /**
+     * AI 心理自评解读的系统提示词。
+     *
+     * <p>量表分数只是筛查结果，模型只负责「把数字翻译成人话」，
+     * 不允许下诊断、不允许给用药建议，中重度必须引导到线下医院。</p>
+     */
+    private static final String ASSESSMENT_SYSTEM_PROMPT = """
+            你是一个温暖、克制的情绪陪伴者。用户刚做完一份心理自评量表，你要根据得分写一段解读。
+            硬性要求：
+            1. 绝对不做医学诊断，不许说「你有抑郁症」「你患有焦虑症」，只能说「这份自评提示……」「筛查结果偏高」；
+            2. 不给任何用药、剂量、补剂建议，不推荐具体医院和医生；
+            3. 得分达到中度及以上时，必须明确建议用户前往线下医院精神科或心理科面诊；
+            4. 如果题目里出现了自伤或自杀念头，先安抚，再明确建议联系信任的人、拨打全国心理援助热线 12356，紧急情况拨打 120 / 110；
+            5. 不要否定用户的感受，不要说「别想太多」「想开点」这类话；
+            6. 结尾提醒一句：量表结果仅供参考，不能替代面诊。
+            输出 4-6 句话的连续正文，不要标题，不要列表，不要 markdown 符号。
             """;
 
     private final AiProperties aiProperties;
@@ -189,6 +218,67 @@ public class AiService {
         Disposable disposable = subscription.get();
         if (disposable != null) {
             disposable.dispose();
+        }
+    }
+
+    /**
+     * 非流式调用：一次问完、一次拿全，用于 AI 情绪周报这类不需要逐字显示的场景。
+     *
+     * @return 模型返回的正文；未配置 Key、超时或调用失败时返回 null，由调用方走兜底文案
+     */
+    public String weeklyReport(String userPrompt) {
+        return complete(WEEKLY_SYSTEM_PROMPT, userPrompt, "周报");
+    }
+
+    /**
+     * 非流式调用：根据自评量表的得分生成一段解读。
+     *
+     * @return 模型返回的正文；未配置 Key、超时或调用失败时返回 null，由调用方走兜底文案
+     */
+    public String assessmentInterpretation(String userPrompt) {
+        return complete(ASSESSMENT_SYSTEM_PROMPT, userPrompt, "自评解读");
+    }
+
+    /**
+     * 单轮非流式补全，周报和自评解读共用。
+     *
+     * @return 正文；未配置 Key、超时或调用失败时返回 null
+     */
+    private String complete(String systemPrompt, String userPrompt, String tag) {
+        if (isKeyMissing()) {
+            return null;
+        }
+        Map<String, Object> body = Map.of(
+                "model", aiProperties.getModel(),
+                "messages", List.of(
+                        Map.of("role", "system", "content", systemPrompt),
+                        Map.of("role", "user", "content", userPrompt)),
+                "stream", false,
+                "temperature", aiProperties.getTemperature(),
+                "max_tokens", aiProperties.getMaxTokens());
+
+        try {
+            String raw = webClient.post()
+                    .uri("/chat/completions")
+                    .contentType(MediaType.APPLICATION_JSON)
+                    .bodyValue(body)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block(Duration.ofSeconds(aiProperties.getTimeoutSeconds() + 10L));
+            if (raw == null) {
+                return null;
+            }
+            JsonNode choices = objectMapper.readTree(raw).path("choices");
+            if (choices.isArray() && !choices.isEmpty()) {
+                JsonNode content = choices.get(0).path("message").path("content");
+                if (!content.isMissingNode() && !content.isNull()) {
+                    return content.asText();
+                }
+            }
+            return null;
+        } catch (Exception e) {
+            log.warn("{} AI 调用失败，改用本地兜底文案: {}", tag, e.getMessage());
+            return null;
         }
     }
 

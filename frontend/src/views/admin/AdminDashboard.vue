@@ -1,8 +1,3 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <div class="page">
     <van-nav-bar title="后台管理" left-arrow @click-left="router.push('/profile')" />
@@ -12,15 +7,23 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
       <van-tab title="日记" name="admin-diaries" />
       <van-tab title="帖子" name="admin-posts" />
       <van-tab title="评论" name="admin-comments" />
-      <van-tab title="举报" name="admin-reports" />
+      <van-tab name="admin-reports">
+        <template #title>
+          <span class="badge-tab">
+            举报
+            <van-badge v-if="reportCount > 0" :content="reportCount" max="99" />
+          </span>
+        </template>
+      </van-tab>
       <van-tab name="admin-crisis">
         <template #title>
-          <span class="crisis-tab">
+          <span class="badge-tab">
             预警
             <van-badge v-if="pendingCount > 0" :content="pendingCount" max="99" />
           </span>
         </template>
       </van-tab>
+      <van-tab title="敏感词" name="admin-sensitive" />
     </van-tabs>
 
     <router-view />
@@ -30,7 +33,7 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
 <script setup>
 import { onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getCrisisPendingCount } from '../../api/admin'
+import { getCrisisPendingCount, getReportPendingCount } from '../../api/admin'
 
 const route = useRoute()
 const router = useRouter()
@@ -45,6 +48,8 @@ watch(
 )
 
 const pendingCount = ref(0)
+// 待处理举报数：和预警同一个轮询节奏，管理员挂在后台时也能看到新的举报
+const reportCount = ref(0)
 let timer = null
 
 // 待处理预警数：进页面拉一次，之后轮询，管理员挂在后台时也能看到新求助
@@ -57,13 +62,26 @@ async function loadPendingCount() {
   }
 }
 
+async function loadReportCount() {
+  try {
+    const data = await getReportPendingCount()
+    reportCount.value = data?.count || 0
+  } catch {
+    // 同上：单个角标拉不到不该影响整个后台
+  }
+}
+
 function onTab(name) {
   router.push({ name })
 }
 
 onMounted(() => {
   loadPendingCount()
-  timer = setInterval(loadPendingCount, 60000)
+  loadReportCount()
+  timer = setInterval(() => {
+    loadPendingCount()
+    loadReportCount()
+  }, 60000)
 })
 onUnmounted(() => clearInterval(timer))
 </script>
@@ -72,7 +90,7 @@ onUnmounted(() => clearInterval(timer))
 .van-tabs {
   margin-bottom: 8px;
 }
-.crisis-tab {
+.badge-tab {
   display: inline-flex;
   align-items: center;
   gap: 4px;

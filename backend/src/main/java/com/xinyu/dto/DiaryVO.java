@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.dto;
 
 import com.xinyu.entity.Diary;
@@ -27,6 +24,8 @@ public class DiaryVO {
     private String aiStatus;
     private List<String> emotionTags;
     private LocalDateTime createdAt;
+    /** 进入回收站的时间；正常日记为 null */
+    private LocalDateTime deletedAt;
     /** 内容命中自残 / 自杀关键词：前端据此弹关怀提示（不落库，只在当次响应里给） */
     private Boolean crisisSupport = false;
 
@@ -44,6 +43,7 @@ public class DiaryVO {
         vo.aiStatus = diary.getAiStatus();
         vo.emotionTags = emotionTags;
         vo.createdAt = diary.getCreatedAt();
+        vo.deletedAt = diary.getDeletedAt();
         return vo;
     }
 }

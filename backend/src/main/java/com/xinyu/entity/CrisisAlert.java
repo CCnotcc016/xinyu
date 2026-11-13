@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -19,9 +16,10 @@ import java.time.LocalDateTime;
 @TableName("crisis_alert")
 public class CrisisAlert {
 
-    /** 目标类型：帖子 / 日记 */
+    /** 目标类型：帖子 / 日记 / 心理自评 */
     public static final String TARGET_POST = "POST";
     public static final String TARGET_DIARY = "DIARY";
+    public static final String TARGET_ASSESSMENT = "ASSESSMENT";
 
     /** 待跟进 */
     public static final String STATUS_PENDING = "PENDING";
@@ -41,5 +39,9 @@ public class CrisisAlert {
     private String remark;
     private Long handledBy;
     private LocalDateTime handledAt;
+    /** 回访：处理完之后隔几天再看一眼，确认当事人状态（v3.2） */
+    private LocalDateTime followUpAt;
+    private String followUpNote;
+    private Long followUpBy;
     private LocalDateTime createdAt;
 }

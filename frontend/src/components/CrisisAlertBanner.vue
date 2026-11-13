@@ -1,8 +1,3 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <Transition name="alert-banner">
     <div v-if="visible" class="crisis-banner" role="alert" @click="goAdmin">
@@ -14,7 +9,7 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
             <div class="crisis-banner__title">有 {{ count }} 条危机预警待跟进</div>
             <div class="crisis-banner__meta">
               {{ who }} · 命中「{{ alert.keyword }}」·
-              {{ alert.targetType === 'DIARY' ? '私密日记' : '树洞帖子' }} ·
+              {{ crisisTargetLabel(alert.targetType) }} ·
               {{ shortTime(alert.createdAt) }}
             </div>
             <div class="crisis-banner__phone" @click.stop>
@@ -40,6 +35,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { useUserStore } from '../stores/user'
 import { getCrisisPendingCount, listCrisisAlerts } from '../api/admin'
+import { crisisTargetLabel } from '../utils/crisis'
 import LiquidGlass from './LiquidGlass.vue'
 
 const DISMISS_KEY = 'xinyu_crisis_banner_dismissed_id'

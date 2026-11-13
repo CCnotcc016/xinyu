@@ -1,10 +1,8 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 import request from '../utils/request'
 
 export const register = (data) => request.post('/auth/register', data)
-export const login = (data) => request.post('/auth/login', data)
+// 登录不该让人等 30 秒：后端没开时 12 秒内失败，登录页才好顺势转成离线登录
+export const login = (data) => request.post('/auth/login', data, { timeout: 12000 })
 export const getMe = () => request.get('/user/me')
 export const getCaptcha = () => request.get('/auth/captcha')
 export const sendSmsCode = (data) => request.post('/auth/sms-code', data)

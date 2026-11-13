@@ -1,15 +1,11 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <div class="page">
     <van-nav-bar title="日记详情" left-arrow @click-left="router.back()" />
 
     <template v-if="diary">
-      <div class="card">
+      <div class="card xinyu-glass">
         <div class="meta">
+          <van-tag v-if="pending" plain type="warning">待同步</van-tag>
           <van-tag v-if="diary.emotionLabel" type="primary">{{ diary.emotionLabel }}</van-tag>
           <span v-if="diary.emotionScore" class="score">{{ diary.emotionScore }} 分</span>
           <span class="time">{{ dateLabel(diary.createdAt) }}</span>
@@ -24,11 +20,11 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
       </div>
 
       <div class="section-title">AI 的陪伴</div>
-      <div v-if="streaming || diary.aiReply" class="card reply">
+      <div v-if="streaming || diary.aiReply" class="card reply xinyu-glass">
         <p v-if="streaming && !replyText" class="loading">正在理解你的感受…</p>
         <p class="reply-text">{{ replyText || diary.aiReply }}</p>
       </div>
-      <van-empty v-else description="让 AI 陪你说说话" />
+      <van-empty v-else :description="pending ? '联网同步后就能让 AI 陪你聊' : '让 AI 陪你说说话'" />
 
       <div class="submit">
         <van-button
@@ -36,34 +32,47 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
           round
           block
           :loading="streaming"
-          :disabled="streaming"
+          :disabled="streaming || pending"
           @click="startAi"
         >
-          {{ diary.aiReply ? '重新生成 AI 回复' : '生成 AI 共情回复' }}
+          {{ aiButtonText }}
         </van-button>
         <van-button round block plain type="danger" @click="onDelete">删除这篇日记</van-button>
       </div>
     </template>
+
+    <van-empty v-else :description="loadFailed ? '离线中，这篇日记还没存到本机' : '日记不存在'" />
 
     <CrisisDialog v-model:show="showCrisis" />
   </div>
 </template>
 
 <script setup>
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
-import { getDiary, deleteDiary } from '../api/diary'
+import { deleteDiaryAny, getDiaryAny } from '../offline/diary'
+import { isLocalId } from '../offline/outbox'
+import { useOfflineStore } from '../stores/offline'
 import { useUserStore } from '../stores/user'
+import { getApiBase } from '../utils/backend'
 import CrisisDialog from '../components/CrisisDialog.vue'
 
 const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
+const offlineStore = useOfflineStore()
 const diary = ref(null)
 const replyText = ref('')
 const streaming = ref(false)
 const showCrisis = ref(false)
+const loadFailed = ref(false)
+// 本地 id 或者带 pending 标记：都说明这篇还没到服务器上，AI 回复自然也没法生成
+const pending = computed(() => isLocalId(route.params.id) || !!diary.value?.pending)
+const aiButtonText = computed(() => {
+  if (pending.value) return '联网同步后可生成 AI 回复'
+  return diary.value?.aiReply ? '重新生成 AI 回复' : '生成 AI 共情回复'
+})
 // SSE 连接由组件自己持有并负责关闭：EventSource 不会随组件卸载自动断开
 let source = null
 
@@ -78,32 +87,76 @@ function dateLabel(dt) {
   return dt ? dt.replace('T', ' ').slice(0, 16) : ''
 }
 
-onMounted(async () => {
-  diary.value = await getDiary(route.params.id)
-  replyText.value = diary.value.aiReply || ''
-  // 翻到一篇写过「不想活」这类内容的日记时，同样给出关怀提示（保存时弹过也会再弹一次，
-  // 这类内容值得多提醒一次；后端这里只是重跑关键词匹配，没有额外请求）
-  if (diary.value.crisisSupport) {
-    showCrisis.value = true
-  }
-})
+// 用 watch 而不是 onMounted：从一篇日记直接跳到另一篇时组件实例会被复用，
+// onMounted 不会再执行，导致危机提示漏弹、AI 回复串到下一篇
+watch(
+  () => route.params.id,
+  async (id) => {
+    if (!id) return
+    closeSource()
+    diary.value = null
+    replyText.value = ''
+    showCrisis.value = false
+    loadFailed.value = false
+    try {
+      // 本地 id 从待同步队列取；服务器 id 走接口，断网时 request.js 会拿缓存顶上
+      const data = await getDiaryAny(id)
+      if (!data) {
+        loadFailed.value = true
+        return
+      }
+      diary.value = data
+      replyText.value = data.aiReply || ''
+      // 翻到一篇写过「不想活」这类内容的日记时，同样给出关怀提示（保存时弹过也会再弹一次，
+      // 这类内容值得多提醒一次；后端这里只是重跑关键词匹配，没有额外请求）
+      if (data.crisisSupport) {
+        showCrisis.value = true
+      }
+    } catch {
+      loadFailed.value = true
+    }
+  },
+  { immediate: true }
+)
+
+// 正在看这篇「待同步」日记时补传成功：换成服务器上的那条，AI 回复按钮也就解锁了
+watch(
+  () => offlineStore.syncedMap[route.params.id],
+  (realId) => {
+    if (realId) router.replace(`/diaries/${realId}`)
+  },
+  { immediate: true }
+)
 
 async function onDelete() {
+  const local = isLocalId(route.params.id)
   try {
-    await showConfirmDialog({ title: '提示', message: '确定删除这篇日记吗？删除后无法恢复。' })
+    await showConfirmDialog({
+      title: '提示',
+      message: local
+        ? '这篇还没同步到服务器，删除后无法恢复。'
+        : '删除后会在回收站里保留 7 天，期间可以恢复。'
+    })
   } catch {
     return
   }
-  await deleteDiary(route.params.id)
-  showToast('已删除')
+  await deleteDiaryAny(route.params.id)
+  showToast(local ? '已删除' : '已放入回收站')
+  offlineStore.refreshPending()
   router.replace('/diaries')
 }
 
 function startAi() {
+  if (pending.value) {
+    showToast('这篇日记还没同步，联网后再试')
+    return
+  }
   closeSource()
   const token = userStore.token
   const id = route.params.id
-  source = new EventSource(`/api/diaries/${id}/ai-reply/stream?token=${encodeURIComponent(token)}`)
+  source = new EventSource(
+    `${getApiBase()}/diaries/${id}/ai-reply/stream?token=${encodeURIComponent(token)}`
+  )
 
   streaming.value = true
   replyText.value = ''
@@ -151,10 +204,8 @@ onUnmounted(() => {
 
 <style scoped>
 .card {
-  background: var(--van-background-2);
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
 }
 .meta {
   display: flex;

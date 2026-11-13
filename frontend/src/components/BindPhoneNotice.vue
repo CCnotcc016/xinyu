@@ -1,8 +1,3 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <van-popup
     :show="show"
@@ -43,8 +38,8 @@ const dismissed = ref(sessionStorage.getItem(KEY) === '1')
 
 const show = computed(() => {
   const user = userStore.user
-  // 管理员自己不需要（也不该）被提醒；没登录、已绑定、已被忽略的都不弹
-  if (!userStore.token || !user || user.role === 'ADMIN') return false
+  // 管理员、客服账号不需要（也不该）被提醒；没登录、已绑定、已被忽略的都不弹
+  if (!userStore.token || !user || userStore.isAdminOrStaff) return false
   if (dismissed.value) return false
   return user.phoneBound === false
 })

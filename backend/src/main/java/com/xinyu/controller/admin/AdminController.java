@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.controller.admin;
 
 import com.xinyu.common.PageResult;
@@ -8,18 +5,22 @@ import com.xinyu.common.Result;
 import com.xinyu.dto.AdminDiaryVO;
 import com.xinyu.dto.CrisisAlertHandleRequest;
 import com.xinyu.dto.CrisisAlertVO;
+import com.xinyu.dto.CrisisFollowUpRequest;
 import com.xinyu.dto.ReportVO;
 import com.xinyu.dto.UserVO;
 import com.xinyu.entity.PostComment;
+import com.xinyu.entity.SensitiveWord;
 import com.xinyu.entity.TreeholePost;
 import com.xinyu.security.SecurityUtil;
 import com.xinyu.service.AdminService;
 import com.xinyu.service.CrisisAlertService;
+import com.xinyu.service.SensitiveWordService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -38,6 +39,7 @@ public class AdminController {
 
     private final AdminService adminService;
     private final CrisisAlertService crisisAlertService;
+    private final SensitiveWordService sensitiveWordService;
 
     @GetMapping("/users")
     public Result<PageResult<UserVO>> users(
@@ -50,6 +52,13 @@ public class AdminController {
     @PutMapping("/users/{id}/status")
     public Result<Void> updateUserStatus(@PathVariable Long id, @RequestParam Integer status) {
         adminService.updateUserStatus(id, status);
+        return Result.ok();
+    }
+
+    /** 解除登录锁定（连续密码错误触发的临时锁定） */
+    @PostMapping("/users/{id}/unlock")
+    public Result<Void> unlockUser(@PathVariable Long id) {
+        adminService.unlockUser(id);
         return Result.ok();
     }
 
@@ -109,13 +118,23 @@ public class AdminController {
     @GetMapping("/reports")
     public Result<PageResult<ReportVO>> reports(
             @RequestParam(defaultValue = "1") long page,
-            @RequestParam(defaultValue = "10") long size) {
-        return Result.ok(adminService.listReports(page, size));
+            @RequestParam(defaultValue = "10") long size,
+            @RequestParam(required = false) String status) {
+        return Result.ok(adminService.listReports(page, size, status));
     }
 
+    /** 后台红点：待处理的举报数（首页弹窗与「举报」tab 角标用） */
+    @GetMapping("/reports/pending-count")
+    public Result<Map<String, Long>> reportPendingCount() {
+        return Result.ok(Map.of("count", adminService.reportPendingCount()));
+    }
+
+    /** 处理举报；remark 会随「举报回执」通知一起发给举报人 */
     @PutMapping("/reports/{id}")
-    public Result<Void> handleReport(@PathVariable Long id, @RequestParam String action) {
-        adminService.handleReport(id, action);
+    public Result<Void> handleReport(@PathVariable Long id,
+                                     @RequestParam String action,
+                                     @RequestParam(required = false) String remark) {
+        adminService.handleReport(id, action, remark);
         return Result.ok();
     }
 
@@ -139,6 +158,36 @@ public class AdminController {
     public Result<Void> handleCrisisAlert(@PathVariable Long id,
                                           @Valid @RequestBody CrisisAlertHandleRequest req) {
         crisisAlertService.handle(SecurityUtil.getCurrentUserId(), id, req);
+        return Result.ok();
+    }
+
+    /** 回访：记录「已联系、状态如何」，只对已处理 / 已忽略的预警开放 */
+    @PutMapping("/crisis-alerts/{id}/follow-up")
+    public Result<Void> followUpCrisisAlert(@PathVariable Long id,
+                                            @Valid @RequestBody CrisisFollowUpRequest req) {
+        crisisAlertService.followUp(SecurityUtil.getCurrentUserId(), id, req);
+        return Result.ok();
+    }
+
+    // ---------- 敏感词 ----------
+
+    @GetMapping("/sensitive-words")
+    public Result<PageResult<SensitiveWord>> sensitiveWords(
+            @RequestParam(defaultValue = "1") long page,
+            @RequestParam(defaultValue = "20") long size,
+            @RequestParam(required = false) String keyword) {
+        return Result.ok(sensitiveWordService.list(page, size, keyword));
+    }
+
+    @PostMapping("/sensitive-words")
+    public Result<Void> addSensitiveWord(@RequestParam String word) {
+        sensitiveWordService.add(word);
+        return Result.ok();
+    }
+
+    @DeleteMapping("/sensitive-words/{id}")
+    public Result<Void> deleteSensitiveWord(@PathVariable Long id) {
+        sensitiveWordService.delete(id);
         return Result.ok();
     }
 }

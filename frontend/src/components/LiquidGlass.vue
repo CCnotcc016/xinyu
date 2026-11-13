@@ -1,8 +1,3 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <script setup>
 /*
  * 液态玻璃容器：危机弹窗、管理员通知条都用它。

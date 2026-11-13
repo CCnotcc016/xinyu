@@ -1,14 +1,21 @@
 {
   "name": "xinyu-frontend",
-  "version": "2.2.2",
+  "version": "3.3.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "build:app": "vite build --mode capacitor"
   },
   "dependencies": {
+    "@capacitor/android": "^6.2.2",
+    "@capacitor/app": "^6.0.3",
+    "@capacitor/core": "^6.2.2",
+    "@capacitor/geolocation": "^6.1.1",
+    "@capacitor/splash-screen": "^6.0.4",
+    "@capacitor/status-bar": "^6.0.3",
     "axios": "^1.7.2",
     "echarts": "^5.5.0",
     "pinia": "^2.1.7",
@@ -17,9 +24,8 @@
     "vue-router": "^4.3.2"
   },
   "devDependencies": {
+    "@capacitor/cli": "^6.2.2",
     "@vitejs/plugin-vue": "^5.0.4",
     "vite": "^5.2.11"
-  },
-  "author": "CCnotcc016 <2947208937@qq.com>",
-  "license": "SEE LICENSE IN LICENSE"
+  }
 }

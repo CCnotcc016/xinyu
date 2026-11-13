@@ -1,8 +1,3 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <div>
     <van-cell title="查看账号" icon="friends-o" :value="ownerLabel" is-link @click="openPicker" />
@@ -47,8 +42,15 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
       </van-list>
     </van-popup>
 
-    <!-- 日记详情 -->
-    <van-popup v-model:show="showDetail" round position="bottom" class="detail">
+    <!-- 日记详情：关闭时销毁内容，否则弹窗会留着上一篇的滚动位置，
+         命中危机词的提示条会被滚出屏幕，看起来像「提示没显示」 -->
+    <van-popup
+      v-model:show="showDetail"
+      round
+      position="bottom"
+      class="detail"
+      destroy-on-close
+    >
       <template v-if="current">
         <div class="detail__title">日记详情</div>
         <van-notice-bar
@@ -236,6 +238,12 @@ async function onDelete(id) {
   padding-bottom: 20px;
   max-height: 86vh;
   overflow-y: auto;
+}
+/* 提示条跟随滚动吸顶：弹窗内容长的时候滚下去也还看得见 */
+.detail :deep(.van-notice-bar) {
+  position: sticky;
+  top: 0;
+  z-index: 1;
 }
 .detail__block {
   padding: 4px 16px 8px;

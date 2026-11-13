@@ -1,7 +1,4 @@
 #!/usr/bin/env bash
-# 心语 (Xinyu) · AI 情绪日记与匿名树洞
-# Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-# 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 # 心语 · 用户端接口冒烟测试
 #
 # 用法：
@@ -13,15 +10,11 @@
 # （连带清理它们产生的日记、帖子、评论、点赞、举报、危机预警），不会留下垃圾数据。
 # v2.0 起注册必须带手机号：脚本会自动过图形验证码、取短信验证码再注册，
 # 因此需要在 dev 配置下运行（xinyu.captcha.echo-code / xinyu.sms.echo-code=true 回显验证码）。
-# 清理需要管理员账号：请通过环境变量传入，仓库里不提供默认口令
-#   ADMIN_USER=admin ADMIN_PASS=你的密码 bash scripts/smoke-test.sh
+# 清理需要管理员账号，默认 admin / zNc40171316，可用环境变量覆盖。
 set -u
 API=${API:-http://127.0.0.1:8080/api}
 ADMIN_USER=${ADMIN_USER:-admin}
-if [ -z "${ADMIN_PASS:-}" ]; then
-  echo "❌ 请先用 ADMIN_PASS 环境变量传入管理员密码，例如：ADMIN_PASS=你的密码 bash scripts/smoke-test.sh" >&2
-  exit 1
-fi
+ADMIN_PASS=${ADMIN_PASS:-zNc40171316}
 pass=0; fail=0
 chk() { # name expected actual
   if [ "$2" = "$3" ]; then echo "  ✅ $1 (=$3)"; pass=$((pass+1));
@@ -88,7 +81,7 @@ reg_user() { # username -> 打印 id
     echo "NONE"; return
   fi
   curl -s -X POST $API/auth/register -H 'Content-Type: application/json' \
-    -d "{\"username\":\"$name\",\"password\":\"pass123456\",\"phone\":\"$ph\",\"smsCode\":\"$sc\"}" >/dev/null
+    -d "{\"username\":\"$name\",\"password\":\"pass123456\",\"phone\":\"$ph\",\"smsCode\":\"$sc\",\"agreementAccepted\":true}" >/dev/null
   local id
   id=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
     -d "{\"username\":\"$name\",\"password\":\"pass123456\"}" | val "['user']['id']")
@@ -127,7 +120,7 @@ chk "captcha is one-shot" 1015 "$(echo "$R" | code)"
 
 echo "== 2. 注册（手机号 + 短信验证码） =="
 R=$(curl -s -X POST $API/auth/register -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$U\",\"password\":\"pass123456\",\"nickname\":\"测试昵称\",\"phone\":\"$PHONE\",\"smsCode\":\"$SMS\"}")
+  -d "{\"username\":\"$U\",\"password\":\"pass123456\",\"nickname\":\"测试昵称\",\"phone\":\"$PHONE\",\"smsCode\":\"$SMS\",\"agreementAccepted\":true}")
 chk "register code" 0 "$(echo "$R" | code)"
 chk "register returns masked phone" "****" "$(echo "$R" | val "['phone']" | cut -c4-7)"
 chk "register phoneBound" True "$(echo "$R" | val "['phoneBound']")"
@@ -136,14 +129,16 @@ UID_=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' \
   -d "{\"username\":\"$U\",\"password\":\"pass123456\"}" | val "['user']['id']")
 
 echo "== 3. 注册校验 =="
+# 注册接口要求先勾选同意（v2.3 起），下面几条用例都带上 agreementAccepted，
+# 否则会在 Bean Validation 处就返回 400，测不到各自的业务分支
 chk "register without phone -> 400" 400 "$(curl -s -X POST $API/auth/register -H 'Content-Type: application/json' \
-  -d '{"username":"nophone'$$'","password":"pass123456"}' | code)"
-BODY="{\"username\":\"badsms$RND\",\"password\":\"pass123456\",\"phone\":\"$(gen_phone)\",\"smsCode\":\"000000\"}"
+  -d '{"username":"nophone'$$'","password":"pass123456","agreementAccepted":true}' | code)"
+BODY="{\"username\":\"badsms$RND\",\"password\":\"pass123456\",\"phone\":\"$(gen_phone)\",\"smsCode\":\"000000\",\"agreementAccepted\":true}"
 R=$(curl -s -X POST $API/auth/register -H 'Content-Type: application/json' -d "$BODY")
 chk "register with bad sms -> 1017" 1017 "$(echo "$R" | code)"
 # 昵称审核在短信校验之后，所以这条要拿一条真实验证码
 NP=$(gen_phone); NS=$(sms_code_for "$NP")
-BODY="{\"username\":\"badname$RND\",\"password\":\"pass123456\",\"nickname\":\"乳房好大\",\"phone\":\"$NP\",\"smsCode\":\"$NS\"}"
+BODY="{\"username\":\"badname$RND\",\"password\":\"pass123456\",\"nickname\":\"乳房好大\",\"phone\":\"$NP\",\"smsCode\":\"$NS\",\"agreementAccepted\":true}"
 R=$(curl -s -X POST $API/auth/register -H 'Content-Type: application/json' -d "$BODY")
 chk "nickname blocklist -> 1014" 1014 "$(echo "$R" | code)"
 chk "sms resend too frequent -> 1018" "SMS_FAIL_1018" "$(sms_code_for "$PHONE")"
@@ -151,7 +146,7 @@ chk "sms resend too frequent -> 1018" "SMS_FAIL_1018" "$(sms_code_for "$PHONE")"
 echo "== 4. 重复注册应失败 =="
 NP2=$(gen_phone); NS2=$(sms_code_for "$NP2")
 R=$(curl -s -X POST $API/auth/register -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$U\",\"password\":\"pass123456\",\"phone\":\"$NP2\",\"smsCode\":\"$NS2\"}")
+  -d "{\"username\":\"$U\",\"password\":\"pass123456\",\"phone\":\"$NP2\",\"smsCode\":\"$NS2\",\"agreementAccepted\":true}")
 chk "duplicate register code" 1001 "$(echo "$R" | code)"
 
 echo "== 5. 参数校验 =="

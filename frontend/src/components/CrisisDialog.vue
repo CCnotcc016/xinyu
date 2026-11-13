@@ -1,8 +1,3 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <van-popup
     :show="show"
@@ -29,8 +24,14 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
         </ul>
 
         <p class="crisis__note">
-          这里是记录情绪的地方，不能替代专业帮助。管理员已收到提示，
-          如果有人可以联系到你，我们愿意搭把手。
+          这里是记录情绪的地方，不能替代专业帮助。
+          <template v-if="privateChat">
+            这段对话只有你们两个人能看到，所以不会有人来打扰你；
+            如果想让身边的人知道，主动开口说一句就好。
+          </template>
+          <template v-else>
+            管理员已收到提示，如果有人可以联系到你，我们愿意搭把手。
+          </template>
         </p>
 
         <div class="crisis__ops">
@@ -46,7 +47,9 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
 import LiquidGlass from './LiquidGlass.vue'
 
 defineProps({
-  show: { type: Boolean, default: false }
+  show: { type: Boolean, default: false },
+  /** 私聊里触发：不产生管理员预警，文案也要说清楚「没有人会看到」 */
+  privateChat: { type: Boolean, default: false }
 })
 const emit = defineEmits(['update:show'])
 

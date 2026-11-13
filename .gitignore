@@ -31,3 +31,19 @@ backend/uploads/*
 # 本机部署脚本生成的 Nginx 配置与日志（默认在 ~/.xinyu-nginx/，这里兜底）
 nginx-*.conf
 nginx-*.pid
+
+# 打包产物（APK 走 GitHub Release，不进仓库）
+*.apk
+*.aab
+
+# Android / Capacitor
+frontend/android/.gradle/
+frontend/android/build/
+frontend/android/app/build/
+frontend/android/local.properties
+frontend/android/key.properties
+frontend/android/*.keystore
+frontend/android/*.jks
+
+# cap sync 生成的网页资源（由 frontend/dist 复制而来，不入库）
+frontend/android/app/src/main/assets/public/

@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
@@ -44,6 +41,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class TreeholeService {
 
+    private static final int MAX_POST_IMAGES = 9;
+
     private final TreeholePostMapper postMapper;
     private final PostCommentMapper commentMapper;
     private final PostLikeMapper likeMapper;
@@ -52,6 +51,8 @@ public class TreeholeService {
     private final RateLimitService rateLimitService;
     private final CrisisSupportService crisisSupportService;
     private final CrisisAlertService crisisAlertService;
+    private final ImageUploadService imageUploadService;
+    private final NotificationService notificationService;
 
     public PageResult<TreeholePostVO> list(Long viewerId, long page, long size) {
         Page<TreeholePost> result = postMapper.selectPage(new Page<>(page, size),
@@ -69,6 +70,47 @@ public class TreeholeService {
         return PageResult.of(result.getTotal(), page, size, records);
     }
 
+    /**
+     * 某个人公开的树洞帖子。匿名帖不在这里出现——匿名帖一旦能和某个账号对上号，匿名就没意义了。
+     */
+    public PageResult<TreeholePostVO> userPosts(Long viewerId, Long authorId, long page, long size) {
+        Page<TreeholePost> result = postMapper.selectPage(new Page<>(page, size),
+                new LambdaQueryWrapper<TreeholePost>()
+                        .eq(TreeholePost::getUserId, authorId)
+                        .eq(TreeholePost::getStatus, 1)
+                        .eq(TreeholePost::getIsAnonymous, 0)
+                        .orderByDesc(TreeholePost::getCreatedAt));
+        String nickname = nickname(authorId);
+        Set<Long> likedIds = likedPostIds(viewerId, result.getRecords().stream()
+                .map(TreeholePost::getId).toList());
+        List<TreeholePostVO> records = result.getRecords().stream()
+                .map(p -> buildVO(p, viewerId, nickname, likedIds.contains(p.getId())))
+                .toList();
+        return PageResult.of(result.getTotal(), page, size, records);
+    }
+
+    /** 公开帖子数 + 收到的点赞总数，个人主页上的活跃度 */
+    public int[] publicStats(Long authorId) {
+        List<TreeholePost> posts = postMapper.selectList(new LambdaQueryWrapper<TreeholePost>()
+                .eq(TreeholePost::getUserId, authorId)
+                .eq(TreeholePost::getStatus, 1)
+                .eq(TreeholePost::getIsAnonymous, 0));
+        int likes = posts.stream().mapToInt(p -> p.getLikeCount() == null ? 0 : p.getLikeCount()).sum();
+        return new int[]{posts.size(), likes};
+    }
+
+    /** 单帖最多 9 张图，且只留本站上传目录下的地址，外链一律丢弃 */
+    private List<String> safeImages(List<String> raw) {
+        if (raw == null || raw.isEmpty()) {
+            return List.of();
+        }
+        return raw.stream()
+                .filter(imageUploadService::isOwnedPostImage)
+                .distinct()
+                .limit(MAX_POST_IMAGES)
+                .toList();
+    }
+
     public TreeholePostVO create(Long userId, TreeholePostRequest req) {
         if (sensitiveWordService.containsSensitive(req.getContent())) {
             throw new BusinessException(ErrorCode.SENSITIVE_WORD);
@@ -79,8 +121,8 @@ public class TreeholeService {
         TreeholePost post = new TreeholePost();
         post.setUserId(userId);
         post.setContent(req.getContent());
-        post.setImages(req.getImages() == null || req.getImages().isEmpty()
-                ? null : String.join(",", req.getImages()));
+        List<String> images = safeImages(req.getImages());
+        post.setImages(images.isEmpty() ? null : String.join(",", images));
         post.setLikeCount(0);
         post.setCommentCount(0);
         post.setStatus(1);
@@ -101,9 +143,49 @@ public class TreeholeService {
                 likedPostIds(viewerId, List.of(id)).contains(id));
     }
 
+    /**
+     * 贴主置顶/取消置顶评论区的一条留言。
+     *
+     * <p>「贴主」指帖子作者，置顶对象可以是别人发的评论；每个帖子最多一条置顶，
+     * 所以先清掉该帖的全部置顶，需要时再置顶目标评论，重复调用不会出现多条置顶。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public CommentVO pinComment(Long userId, Long commentId, boolean pinned) {
+        PostComment comment = commentMapper.selectById(commentId);
+        if (comment == null || comment.getStatus() == null || comment.getStatus() != 1) {
+            throw new BusinessException(ErrorCode.COMMENT_NOT_FOUND);
+        }
+        TreeholePost post = requirePost(comment.getPostId());
+        if (!post.getUserId().equals(userId)) {
+            throw new BusinessException(ErrorCode.POST_NOT_OWNED);
+        }
+        if (pinned) {
+            LocalDateTime now = LocalDateTime.now();
+            commentMapper.update(null, new LambdaUpdateWrapper<PostComment>()
+                    .eq(PostComment::getPostId, post.getId())
+                    .isNotNull(PostComment::getPinnedAt)
+                    .set(PostComment::getPinnedAt, null));
+            commentMapper.update(null, new LambdaUpdateWrapper<PostComment>()
+                    .eq(PostComment::getId, commentId)
+                    .set(PostComment::getPinnedAt, now));
+            comment.setPinnedAt(now);
+        } else {
+            commentMapper.update(null, new LambdaUpdateWrapper<PostComment>()
+                    .eq(PostComment::getId, commentId)
+                    .set(PostComment::getPinnedAt, null));
+            comment.setPinnedAt(null);
+        }
+        PostComment parent = comment.getParentId() == null ? null : commentMapper.selectById(comment.getParentId());
+        CommentVO vo = CommentVO.from(comment, nickname(comment.getUserId()),
+                comment.getUserId().equals(userId),
+                parent == null ? null : nickname(parent.getUserId()));
+        vo.setCanPin(true);
+        return vo;
+    }
+
     @Transactional(rollbackFor = Exception.class)
     public Map<String, Object> like(Long userId, Long id) {
-        requirePost(id);
+        TreeholePost post = requirePost(id);
         long count = likeMapper.selectCount(new LambdaQueryWrapper<PostLike>()
                 .eq(PostLike::getPostId, id).eq(PostLike::getUserId, userId));
         if (count == 0) {
@@ -114,6 +196,7 @@ public class TreeholeService {
                 likeMapper.insert(like);
                 postMapper.update(null, new LambdaUpdateWrapper<TreeholePost>()
                         .eq(TreeholePost::getId, id).setSql("like_count = like_count + 1"));
+                notificationService.onLike(userId, post.getUserId(), id, post.getContent());
             } catch (DuplicateKeyException ignored) {
                 // 并发下重复点赞，忽略
             }
@@ -133,12 +216,16 @@ public class TreeholeService {
         return likeResult(userId, id);
     }
 
-    public PageResult<CommentVO> comments(Long id, long page, long size) {
-        requirePost(id);
+    public PageResult<CommentVO> comments(Long viewerId, Long id, long page, long size) {
+        TreeholePost post = requirePost(id);
+        boolean viewerIsAuthor = viewerId != null && viewerId.equals(post.getUserId());
         Page<PostComment> result = commentMapper.selectPage(new Page<>(page, size),
                 new LambdaQueryWrapper<PostComment>()
                         .eq(PostComment::getPostId, id)
                         .eq(PostComment::getStatus, 1)
+                        // 置顶的留言排最前：MySQL 的 DESC 排序里 NULL 排最后，
+                        // 所以未置顶的评论会自动落到第二排序键（发言时间）
+                        .orderByDesc(PostComment::getPinnedAt)
                         .orderByAsc(PostComment::getCreatedAt));
         List<PostComment> records = result.getRecords();
 
@@ -152,7 +239,11 @@ public class TreeholeService {
                 .map(c -> {
                     PostComment parent = c.getParentId() == null ? null : parents.get(c.getParentId());
                     String replyTo = parent == null ? null : nicknames.getOrDefault(parent.getUserId(), "用户");
-                    return CommentVO.from(c, nicknames.getOrDefault(c.getUserId(), "用户"), false, replyTo);
+                    CommentVO vo = CommentVO.from(c, nicknames.getOrDefault(c.getUserId(), "用户"),
+                            viewerId != null && viewerId.equals(c.getUserId()), replyTo);
+                    // 只有贴主能置顶评论，前端据此决定要不要显示「置顶」按钮
+                    vo.setCanPin(viewerIsAuthor);
+                    return vo;
                 })
                 .toList();
         return PageResult.of(result.getTotal(), page, size, voRecords);
@@ -173,7 +264,7 @@ public class TreeholeService {
         if (sensitiveWordService.containsSensitive(req.getContent())) {
             throw new BusinessException(ErrorCode.SENSITIVE_WORD);
         }
-        requirePost(id);
+        TreeholePost post = requirePost(id);
         PostComment parent = requireParent(id, req.getParentId());
         PostComment comment = new PostComment();
         comment.setPostId(id);
@@ -187,8 +278,16 @@ public class TreeholeService {
         commentMapper.insert(comment);
         postMapper.update(null, new LambdaUpdateWrapper<TreeholePost>()
                 .eq(TreeholePost::getId, id).setSql("comment_count = comment_count + 1"));
-        return CommentVO.from(comment, nickname(userId), true,
+        CommentVO vo = CommentVO.from(comment, nickname(userId), true,
                 parent == null ? null : nickname(parent.getUserId()));
+        // 贴主自己留言时同样可以顺手置顶
+        vo.setCanPin(post.getUserId().equals(userId));
+        notificationService.onComment(userId, post.getUserId(), id, req.getContent());
+        // 回复别人的评论时单独再通知一次被回复的人；被回复人就是贴主时不重复打扰
+        if (parent != null && !parent.getUserId().equals(post.getUserId())) {
+            notificationService.onCommentReply(userId, parent.getUserId(), id, req.getContent());
+        }
+        return vo;
     }
 
     /** 校验被回复的评论：必须存在、未被删除，且属于同一个帖子 */

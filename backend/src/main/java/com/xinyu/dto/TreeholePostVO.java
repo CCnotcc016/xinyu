@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.dto;
 
 import com.xinyu.entity.TreeholePost;
@@ -19,6 +16,11 @@ public class TreeholePostVO {
     private Integer commentCount;
     private Boolean anonymous;
     private String nickname;
+    /**
+     * 非匿名帖子的作者 ID，前端据此把昵称做成可点的「主页」入口。
+     * 匿名帖一律为 null —— 一旦返回 ID，匿名就形同虚设了。
+     */
+    private Long userId;
     private Boolean liked;
     private Boolean mine;
     private Boolean crisisSupport;
@@ -34,6 +36,7 @@ public class TreeholePostVO {
         vo.commentCount = post.getCommentCount();
         vo.anonymous = post.getIsAnonymous() != null && post.getIsAnonymous() == 1;
         vo.nickname = vo.anonymous ? "匿名" : nickname;
+        vo.userId = vo.anonymous ? null : post.getUserId();
         vo.liked = liked;
         vo.mine = mine;
         vo.crisisSupport = false;

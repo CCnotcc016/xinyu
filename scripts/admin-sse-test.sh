@@ -1,23 +1,17 @@
 #!/usr/bin/env bash
-# 心语 (Xinyu) · AI 情绪日记与匿名树洞
-# Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-# 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 # 心语 · 后台管理 + SSE 流式接口测试
 #
 # 用法：
-#   ADMIN_USER=admin ADMIN_PASS=你的密码 bash scripts/admin-sse-test.sh
+#   bash scripts/admin-sse-test.sh
+#   ADMIN_USER=admin ADMIN_PASS=zNc40171316 bash scripts/admin-sse-test.sh
 #
 # 依赖：curl、python3。
 # 脚本会注册随机用户、发帖、举报并执行管理操作。
 # 结束时统一删除本次创建的测试账号及其全部关联数据，不留垃圾数据。
-# 管理员密码请通过 ADMIN_PASS 环境变量传入，仓库里不提供默认口令。
 set -u
 API=${API:-http://127.0.0.1:8080/api}
 ADMIN_USER=${ADMIN_USER:-admin}
-if [ -z "${ADMIN_PASS:-}" ]; then
-  echo "❌ 请先用 ADMIN_PASS 环境变量传入管理员密码，例如：ADMIN_PASS=你的密码 bash scripts/admin-sse-test.sh" >&2
-  exit 1
-fi
+ADMIN_PASS=${ADMIN_PASS:-zNc40171316}
 pass=0; fail=0
 chk() {
   if [ "$2" = "$3" ]; then echo "  ✅ $1 (=$3)"; pass=$((pass+1));
@@ -74,7 +68,7 @@ if [ "$SMS" = "NONE" ] || [ "${SMS#SMS_FAIL_}" != "$SMS" ]; then
   exit 1
 fi
 curl -s -X POST $API/auth/register -H 'Content-Type: application/json' \
-  -d "{\"username\":\"$U\",\"password\":\"pass123456\",\"phone\":\"$PHONE\",\"smsCode\":\"$SMS\"}" >/dev/null
+  -d "{\"username\":\"$U\",\"password\":\"pass123456\",\"phone\":\"$PHONE\",\"smsCode\":\"$SMS\",\"agreementAccepted\":true}" >/dev/null
 TOKEN=$(curl -s -X POST $API/auth/login -H 'Content-Type: application/json' -d "{\"username\":\"$U\",\"password\":\"pass123456\"}" | val "['token']")
 MYUID=$(curl -s $API/user/me -H "Authorization: Bearer $TOKEN" | val "['id']")
 [ "$MYUID" != "NONE" ] && CLEANUP_IDS+=("$MYUID")

@@ -1,8 +1,5 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 import { ref } from 'vue'
-import { APP_VERSION, currentNotice } from '../config/changelog'
+import { changelog, currentNotice, loadChangelog } from '../config/changelog'
 
 const STORAGE_KEY = 'xinyu:notice:version'
 
@@ -28,19 +25,28 @@ function writeSeenVersion(version) {
 export function useUpdateNotice() {
   /** 只有存在当前版本的更新说明、且用户还没读过这个版本时才弹 */
   function openIfUpdated() {
-    if (!currentNotice()) return
-    if (readSeenVersion() === APP_VERSION) return
+    return loadChangelog().then(({ version }) => {
+      if (!version) return
+      if (!currentNotice()) return
+      if (readSeenVersion() === version) return
+      visible.value = true
+    })
+  }
+
+  /** 主动打开（「我的」页点「更新说明」时用）：当前版本没写说明也能翻历史 */
+  function open() {
     visible.value = true
   }
 
-  /** 主动打开（「我的」页点「更新说明」时用） */
-  function open() {
-    if (currentNotice()) visible.value = true
-  }
-
-  /** 关闭即记为已读，之后直到下个版本才会再弹 */
+  /**
+   * 关闭即记为已读，之后直到下个版本才会再弹。
+   * 当前版本还没有更新说明时不算「已读」—— 否则用户顺手翻一次历史，
+   * 就把本该看到的发版说明给吃掉，再也不会自动弹了。
+   */
   function close() {
-    writeSeenVersion(APP_VERSION)
+    if (currentNotice() && changelog.version) {
+      writeSeenVersion(changelog.version)
+    }
     visible.value = false
   }
 

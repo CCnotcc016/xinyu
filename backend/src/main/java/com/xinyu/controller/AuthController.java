@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.controller;
 
 import com.xinyu.common.Result;
@@ -14,6 +11,8 @@ import com.xinyu.dto.UserVO;
 import com.xinyu.service.AuthService;
 import com.xinyu.service.CaptchaService;
 import com.xinyu.service.SmsCodeService;
+import com.xinyu.util.ClientIp;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -34,6 +33,18 @@ public class AuthController {
     private final CaptchaService captchaService;
     private final SmsCodeService smsCodeService;
 
+    /**
+     * 存活探针：前端登录页用一个 3 秒超时的 GET 判断「后端开没开」，
+     * 决定是直接尝试登录，还是走本机保存过的账号离线进入。
+     *
+     * 刻意不查库、不碰 Redis —— 它只回答「端口通不通」。
+     * 数据库有问题时登录会直接返回明确错误，比在这里伪装成离线更好排查。
+     */
+    @GetMapping("/ping")
+    public Result<Void> ping() {
+        return Result.ok();
+    }
+
     /** 图形验证码：注册页与换手机号页在「获取验证码」前先过这道 */
     @GetMapping("/captcha")
     public Result<CaptchaVO> captcha() {
@@ -51,8 +62,9 @@ public class AuthController {
         return Result.ok(authService.register(req));
     }
 
+    /** 登录：按账号失败次数锁定 + 同 IP 失败频次限制，见 LoginAttemptService */
     @PostMapping("/login")
-    public Result<LoginResponse> login(@Valid @RequestBody LoginRequest req) {
-        return Result.ok(authService.login(req));
+    public Result<LoginResponse> login(@Valid @RequestBody LoginRequest req, HttpServletRequest request) {
+        return Result.ok(authService.login(req, ClientIp.of(request)));
     }
 }

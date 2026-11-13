@@ -1,18 +1,26 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <div class="page">
     <van-nav-bar title="树洞" left-arrow @click-left="router.back()" />
 
-    <div v-if="post" class="post">
+    <div v-if="post" class="post xinyu-glass">
       <div class="post-head">
-        <span class="nick">{{ post.nickname }}</span>
+        <span
+          class="nick"
+          :class="{ 'nick--link': post.userId != null }"
+          @click="post.userId != null && router.push(`/u/${post.userId}`)"
+        >{{ post.nickname }}</span>
         <span class="time">{{ dateLabel(post.createdAt) }}</span>
       </div>
       <p class="content">{{ post.content }}</p>
+      <div v-if="post.images && post.images.length" class="images">
+        <img
+          v-for="(img, i) in post.images"
+          :key="img"
+          :src="mediaUrl(img)"
+          class="images__item"
+          @click="preview(i)"
+        />
+      </div>
       <div class="post-foot">
         <span :class="{ liked: post.liked }" @click="toggleLike">
           {{ post.liked ? '❤️' : '🤍' }} {{ post.likeCount }}
@@ -26,9 +34,19 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
     <van-list v-model:loading="loading" v-model:error="error" :finished="finished" finished-text="没有更多评论" error-text="加载失败，点击重新加载" @load="onLoad">
       <div v-for="c in comments" :key="c.id" class="comment">
         <div class="comment-head">
-          <span class="nick">{{ c.nickname }}</span>
+          <span class="nick">
+            <van-tag v-if="c.pinned" type="warning" class="pin-tag">置顶</van-tag>
+            <span
+              class="nick__name nick__name--link"
+              @click="router.push(`/u/${c.userId}`)"
+            >{{ c.nickname }}</span>
+          </span>
           <span class="comment-right">
             <span class="time">{{ dateLabel(c.createdAt) }}</span>
+            <!-- 只有贴主（帖子作者）能置顶评论，且可以置顶别人的评论 -->
+            <span v-if="c.canPin" class="reply-btn" @click="togglePinComment(c)">
+              {{ c.pinned ? '取消置顶' : '置顶' }}
+            </span>
             <span class="reply-btn" @click="startReply(c)">回复</span>
           </span>
         </div>
@@ -47,7 +65,11 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
         <van-field
           ref="commentField"
           v-model="commentText"
+          type="textarea"
+          autosize
+          rows="1"
           :placeholder="replyTo ? `回复 @${replyTo.nickname}…` : '写下你的陪伴…'"
+          @keydown="onCommentKeydown"
         />
         <van-button size="small" type="primary" @click="onAddComment">发送</van-button>
       </div>
@@ -66,13 +88,15 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
 </template>
 
 <script setup>
-import { onMounted, ref } from 'vue'
+import { nextTick, onMounted, ref } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { showToast } from 'vant'
+import { showImagePreview, showToast } from 'vant'
 import {
-  getPost, likePost, unlikePost,
-  listComments, addComment, createReport
+  getPost, likePost, unlikePost, pinComment,
+  listComments, addComment
 } from '../api/treehole'
+import { createReport } from '../api/report'
+import { mediaUrl } from '../utils/backend'
 
 const route = useRoute()
 const router = useRouter()
@@ -89,6 +113,10 @@ const commentField = ref(null)
 const showReport = ref(false)
 const reportReason = ref('')
 const reporting = ref(false)
+
+function preview(index) {
+  showImagePreview({ images: post.value.images.map(mediaUrl), startPosition: index })
+}
 
 function dateLabel(dt) {
   return dt ? dt.replace('T', ' ').slice(0, 16) : ''
@@ -128,6 +156,20 @@ async function toggleLike() {
   }
 }
 
+async function togglePinComment(c) {
+  const pinned = !c.pinned
+  await pinComment(c.id, pinned)
+  // 置顶会挤掉本来的置顶评论、顺序也整体变了，重新拉第一页最省心
+  comments.value = []
+  page.value = 1
+  finished.value = false
+  error.value = false
+  // 先占住 loading：列表清空后 van-list 会自己 check 一次，不置位会和我们这次手动加载撞成重复数据
+  loading.value = true
+  await onLoad()
+  showToast(pinned ? '已置顶' : '已取消置顶')
+}
+
 function startReply(comment) {
   replyTo.value = { id: comment.id, nickname: comment.nickname }
   commentField.value?.focus()
@@ -150,6 +192,48 @@ async function onAddComment() {
   post.value.commentCount = (post.value.commentCount || 0) + 1
   commentText.value = ''
   cancelReply()
+  // 电脑上连续评论时不用再点一次输入框
+  if (isDesktop) {
+    commentField.value?.focus()
+  }
+}
+
+/*
+ * 有鼠标又不是触屏才当作电脑：手机上回车的语义是换行，发送交给右边的按钮。
+ * 电脑上回车直接发送，想换行得按住 Command（macOS）/ Ctrl（Windows）再回车。
+ * 换行得自己插：浏览器对 Cmd/Ctrl + Enter 不会补默认换行（只有 Shift + Enter 会）。
+ */
+const isDesktop =
+  typeof window !== 'undefined' &&
+  window.matchMedia('(hover: hover) and (pointer: fine)').matches
+
+function insertNewline(el) {
+  const start = el.selectionStart ?? el.value.length
+  const end = el.selectionEnd ?? start
+  commentText.value = el.value.slice(0, start) + '\n' + el.value.slice(end)
+  // v-model 要等 DOM 更新完才能把光标放回去
+  nextTick(() => {
+    el.selectionStart = el.selectionEnd = start + 1
+  })
+}
+
+function onCommentKeydown(e) {
+  // 中文输入法选词时的回车不是发送
+  if (e.key !== 'Enter' || e.isComposing || e.keyCode === 229) {
+    return
+  }
+  if (e.target?.tagName !== 'TEXTAREA' || !isDesktop) {
+    return
+  }
+  e.preventDefault()
+  if (e.metaKey || e.ctrlKey) {
+    insertNewline(e.target)
+    return
+  }
+  // 空内容按回车只吃掉换行，不弹「请输入评论内容」的提示
+  if (commentText.value.trim()) {
+    onAddComment()
+  }
 }
 
 async function onReport() {
@@ -171,10 +255,22 @@ async function onReport() {
 
 <style scoped>
 .post {
-  background: var(--van-background-2);
-  border-radius: 8px;
+  border-radius: 16px;
   padding: 14px 16px;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.05);
+}
+.images {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0;
+}
+.images__item {
+  width: calc((100% - 12px) / 3);
+  aspect-ratio: 1 / 1;
+  border-radius: 8px;
+  object-fit: cover;
+  background: var(--van-gray-2);
+  cursor: pointer;
 }
 .post-head,
 .comment-head {
@@ -182,8 +278,21 @@ async function onReport() {
   justify-content: space-between;
 }
 .nick {
+  display: flex;
+  align-items: center;
+  gap: 6px;
   font-weight: 600;
   color: var(--xinyu-accent);
+}
+.nick--link,
+.nick__name--link {
+  /* 能点进主页的昵称给个下划线暗示，匿名的只是普通文字 */
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  cursor: pointer;
+}
+.nick__name--link {
+  color: inherit;
 }
 .time {
   color: var(--van-text-color-2);
@@ -225,6 +334,9 @@ async function onReport() {
   align-items: center;
   gap: 10px;
 }
+.pin-tag {
+  margin-right: 6px;
+}
 .reply-btn {
   color: var(--xinyu-accent);
   font-size: 12px;
@@ -250,6 +362,12 @@ async function onReport() {
   -webkit-backdrop-filter: blur(18px) saturate(180%);
   padding: 8px 12px;
   border-top: 1px solid var(--van-border-color);
+}
+/* 宽屏上输入条不用跟着内容列铺满，读起来太散 */
+@media (min-width: 1024px) {
+  .input-bar {
+    max-width: 760px;
+  }
 }
 .input-row {
   display: flex;

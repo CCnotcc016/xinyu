@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.dto;
 
 import com.xinyu.entity.Report;
@@ -22,6 +19,8 @@ public class ReportVO {
     private Long reporterId;
     private String reporterName;
     private String targetContent;
+    /** 处理说明，未处理时为 null */
+    private String remark;
     private LocalDateTime createdAt;
 
     public static ReportVO from(Report report, String reporterName, String targetContent) {
@@ -34,6 +33,7 @@ public class ReportVO {
         vo.reporterId = report.getReporterId();
         vo.reporterName = reporterName;
         vo.targetContent = targetContent;
+        vo.remark = report.getRemark();
         vo.createdAt = report.getCreatedAt();
         return vo;
     }

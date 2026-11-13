@@ -1,18 +1,17 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
 import com.xinyu.common.BusinessException;
 import com.xinyu.common.ErrorCode;
+import com.xinyu.common.Legal;
 import com.xinyu.config.UploadProperties;
 import com.xinyu.dto.ChangePasswordRequest;
 import com.xinyu.dto.ChangePhoneRequest;
 import com.xinyu.dto.UserVO;
 import com.xinyu.entity.User;
 import com.xinyu.mapper.UserMapper;
+import com.xinyu.util.PasswordPolicy;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.crypto.password.PasswordEncoder;
@@ -26,6 +25,7 @@ import java.io.InputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
+import java.time.LocalDateTime;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
@@ -57,6 +57,41 @@ public class UserService {
         return user;
     }
 
+    /** 记录对现行《用户协议》《隐私政策》的同意，老账号的「政策更新」弹窗走这里 */
+    @Transactional(rollbackFor = Exception.class)
+    public UserVO acceptAgreement(Long userId, String version) {
+        // 只认现行版本：客户端拿旧文本点「同意」不算数，否则改一次政策就白改了
+        if (!Legal.CURRENT_VERSION.equals(version)) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST);
+        }
+        User user = require(userId);
+        LocalDateTime now = LocalDateTime.now();
+        userMapper.update(null, new LambdaUpdateWrapper<User>()
+                .eq(User::getId, userId)
+                .set(User::getAgreementVersion, Legal.CURRENT_VERSION)
+                .set(User::getAgreementAcceptedAt, now));
+        user.setAgreementVersion(Legal.CURRENT_VERSION);
+        user.setAgreementAcceptedAt(now);
+        log.info("用户 {} 同意了协议版本 {}", userId, Legal.CURRENT_VERSION);
+        return UserVO.from(user);
+    }
+
+    /** 定位 / 天气授权开关，同意和撤回都留时间戳；坐标本身只存在用户手机里，不落库 */
+    @Transactional(rollbackFor = Exception.class)
+    public UserVO updateLocationConsent(Long userId, boolean consent) {
+        User user = require(userId);
+        int value = consent ? 1 : 0;
+        LocalDateTime now = LocalDateTime.now();
+        userMapper.update(null, new LambdaUpdateWrapper<User>()
+                .eq(User::getId, userId)
+                .set(User::getLocationConsent, value)
+                .set(User::getLocationConsentAt, now));
+        user.setLocationConsent(value);
+        user.setLocationConsentAt(now);
+        log.info("用户 {}{}了定位授权", userId, consent ? "同意" : "撤回");
+        return UserVO.from(user);
+    }
+
     /** 修改昵称（走禁用词校验） */
     public UserVO updateNickname(Long userId, String rawNickname) {
         String nickname = rawNickname == null ? "" : rawNickname.trim();
@@ -81,6 +116,7 @@ public class UserService {
         if (passwordEncoder.matches(req.getNewPassword(), user.getPasswordHash())) {
             throw new BusinessException(ErrorCode.PASSWORD_SAME);
         }
+        PasswordPolicy.assertStrong(user.getUsername(), req.getNewPassword());
         userMapper.update(null, new LambdaUpdateWrapper<User>()
                 .eq(User::getId, userId)
                 .set(User::getPasswordHash, passwordEncoder.encode(req.getNewPassword())));

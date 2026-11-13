@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.entity;
 
 import com.baomidou.mybatisplus.annotation.IdType;
@@ -22,5 +19,7 @@ public class PostComment {
     private Long parentId;
     private String content;
     private Integer status;
+    /** 置顶时间，NULL = 未置顶；贴主每个帖子最多置顶一条评论 */
+    private LocalDateTime pinnedAt;
     private LocalDateTime createdAt;
 }

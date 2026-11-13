@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.common;
 
 /**
@@ -36,11 +33,27 @@ public enum ErrorCode {
     UPLOAD_TOO_LARGE(1022, "图片不能超过 2MB"),
     UPLOAD_FAILED(1023, "文件保存失败，请稍后再试"),
     PASSWORD_SAME(1024, "新密码不能与原密码相同"),
+    ACCOUNT_LOCKED(1026, "密码错误次数过多，账号已被临时锁定"),
+    PASSWORD_TOO_WEAK(1027, "密码强度不足"),
+    POST_IMAGE_TOO_LARGE(1025, "单张图片不能超过 5MB"),
     DIARY_NOT_FOUND(2001, "日记不存在"),
+    SUPPORT_CONVERSATION_NOT_FOUND(2002, "会话不存在或已被其他客服接手"),
+    SUPPORT_CONVERSATION_CLOSED(2003, "该会话已结单，用户再次咨询后会重新分配"),
+    SUPPORT_CLOSE_NOT_ASSIGNEE(2004, "只有接手的客服可以结单，请先回复一条消息"),
     POST_NOT_FOUND(3001, "帖子不存在"),
     COMMENT_NOT_FOUND(3002, "评论不存在"),
     REPORT_NOT_FOUND(3003, "举报记录不存在"),
     CRISIS_ALERT_NOT_FOUND(3004, "预警记录不存在"),
+    POST_NOT_OWNED(3005, "只有贴主可以置顶评论"),
+    FRIEND_SELF(3006, "不能把自己加为好友"),
+    FRIEND_EXISTS(3007, "你们已经是好友了"),
+    FRIEND_REQUEST_EXISTS(3008, "已经申请过了，等对方确认就好"),
+    FRIEND_REQUEST_NOT_FOUND(3009, "申请不存在或已被处理"),
+    FRIEND_REQUEST_NOT_TARGET(3010, "只能处理发给自己的申请"),
+    NOT_FRIEND(3011, "成为好友后才能聊天"),
+    SCALE_NOT_FOUND(3012, "量表不存在"),
+    SCALE_ANSWERS_INVALID(3013, "请完成全部题目后再提交"),
+    ASSESSMENT_NOT_FOUND(3014, "自评记录不存在"),
     RATE_LIMITED(429, "操作过于频繁，请稍后再试"),
     SENSITIVE_WORD(4001, "内容包含敏感词，请修改后重试"),
     AI_SERVICE_ERROR(5001, "AI 服务暂时不可用，请稍后再试"),

@@ -1,7 +1,5 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 import { defineStore } from 'pinia'
+import { clearApiCache } from '../offline/cache'
 
 export const useUserStore = defineStore('user', {
   state: () => ({
@@ -10,7 +8,10 @@ export const useUserStore = defineStore('user', {
   }),
   getters: {
     isLogin: (state) => !!state.token,
-    isAdmin: (state) => state.user?.role === 'ADMIN'
+    isAdmin: (state) => state.user?.role === 'ADMIN',
+    // 客服：只能看自己接手的会话；管理员能看全部
+    isStaff: (state) => state.user?.role === 'STAFF',
+    isAdminOrStaff: (state) => state.user?.role === 'ADMIN' || state.user?.role === 'STAFF'
   },
   actions: {
     setLogin(token, user) {
@@ -28,6 +29,9 @@ export const useUserStore = defineStore('user', {
       this.user = null
       localStorage.removeItem('xinyu_token')
       localStorage.removeItem('xinyu_user')
+      // 缓存里都是这个账号的日记、树洞，换人用这台手机不能留
+      // 待同步队列不清：那是用户自己写下的东西，登录回原账号还要继续传
+      clearApiCache()
     }
   }
 })

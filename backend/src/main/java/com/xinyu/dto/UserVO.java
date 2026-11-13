@@ -1,10 +1,10 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 package com.xinyu.dto;
 
+import com.xinyu.common.Legal;
 import com.xinyu.entity.User;
 import lombok.Data;
+
+import java.time.LocalDateTime;
 
 /**
  * 脱敏后的用户信息
@@ -25,6 +25,16 @@ public class UserVO {
     private Boolean phoneBound;
     private String role;
     private Integer status;
+    /** 已同意的协议版本，从未同意过时为 null */
+    private String agreementVersion;
+    /** 同意时间，作为「用户确实同意过」的凭证 */
+    private LocalDateTime agreementAcceptedAt;
+    /** 现行协议版本是否已确认；false 时前端会强制弹出「政策更新」 */
+    private Boolean agreementAccepted;
+    /** 是否授权用定位换天气，设置页的开关就绑这个 */
+    private Boolean locationConsent;
+    /** 登录锁定到期时间，未锁定为 null；后台据此显示「已锁定」与解锁按钮 */
+    private LocalDateTime lockedUntil;
 
     public static UserVO from(User user) {
         UserVO vo = new UserVO();
@@ -36,6 +46,12 @@ public class UserVO {
         vo.phoneBound = user.getPhone() != null && !user.getPhone().isBlank();
         vo.role = user.getRole();
         vo.status = user.getStatus();
+        vo.agreementVersion = user.getAgreementVersion();
+        vo.agreementAcceptedAt = user.getAgreementAcceptedAt();
+        // 比对的是「现版本」，所以每次改法律文本都会自动让所有老用户重新确认一次
+        vo.agreementAccepted = Legal.CURRENT_VERSION.equals(user.getAgreementVersion());
+        vo.locationConsent = user.getLocationConsent() != null && user.getLocationConsent() == 1;
+        vo.lockedUntil = user.getLockedUntil();
         return vo;
     }
 

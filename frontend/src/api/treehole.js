@@ -1,6 +1,3 @@
-// 心语 (Xinyu) · AI 情绪日记与匿名树洞
-// Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-// 仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
 import request from '../utils/request'
 
 export const listPosts = (params) => request.get('/treehole/posts', { params })
@@ -10,4 +7,13 @@ export const likePost = (id) => request.post(`/treehole/posts/${id}/like`)
 export const unlikePost = (id) => request.delete(`/treehole/posts/${id}/like`)
 export const listComments = (id, params) => request.get(`/treehole/posts/${id}/comments`, { params })
 export const addComment = (id, data) => request.post(`/treehole/posts/${id}/comments`, data)
-export const createReport = (data) => request.post('/reports', data)
+/** 发帖前先把图传上去，返回的 url 放进 createPost 的 images 数组 */
+export const uploadPostImage = (file) => {
+  const form = new FormData()
+  form.append('file', file)
+  return request.post('/treehole/images', form, {
+    headers: { 'Content-Type': 'multipart/form-data' }
+  })
+}
+// 评论区置顶：贴主可置顶任意一条评论，pinned=true 置顶 / false 取消；每个帖子只允许一条
+export const pinComment = (id, pinned) => request.put(`/treehole/comments/${id}/pin`, null, { params: { pinned } })

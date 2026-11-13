@@ -1,15 +1,9 @@
-<!--
-心语 (Xinyu) · AI 情绪日记与匿名树洞
-Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
-仅供交流学习使用，未经授权禁止商业售卖；详见项目根目录 LICENSE。
--->
 <template>
   <div class="page register">
     <van-nav-bar title="注册" left-arrow @click-left="router.back()" />
 
     <div class="register__hero">
       <div class="register__brand">心语</div>
-      <p class="register__slogan">先把心里的事写下来，剩下的交给时间和 AI</p>
     </div>
 
     <van-form @submit="onSubmit">
@@ -72,10 +66,10 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
           type="password"
           name="password"
           label="密码"
-          placeholder="6-32 位"
+          placeholder="8-32 位，含字母和数字"
           :rules="[
             { required: true, message: '请输入密码' },
-            { pattern: /^\S{6,32}$/, message: '密码为 6-32 位且不含空格' }
+            { validator: checkPasswordRule }
           ]"
         />
         <van-field
@@ -88,10 +82,16 @@ Copyright (c) 2026 CCnotcc016 (2947208937@qq.com). All rights reserved.
         />
       </van-cell-group>
 
-      <p class="register__hint">
-        手机号用于「树洞出现危机表达时管理员能联系到你」，不会公开展示，
-        其他用户只能看到打码后的号码。
-      </p>
+      <!-- 用 a + target="_blank" 而不是 router.push：注册表单填了一半，
+           跳走再回来会全清空，这是必须保住用户输入的地方 -->
+      <van-checkbox v-model="agreed" class="register__agree" icon-size="16px">
+        <span class="register__agree-text">
+          我已阅读并同意
+          <a :href="legalHref('terms')" target="_blank" rel="noopener" @click.stop>《用户协议》</a>
+          <a :href="legalHref('privacy')" target="_blank" rel="noopener" @click.stop>《隐私政策》</a>
+          <a :href="legalHref('disclaimer')" target="_blank" rel="noopener" @click.stop>《免责声明》</a>
+        </span>
+      </van-checkbox>
 
       <div class="submit">
         <van-button round block type="primary" native-type="submit" :loading="loading">
@@ -118,12 +118,25 @@ import { showToast } from 'vant'
 import { register } from '../api/auth'
 import { useSmsCode } from '../composables/useSmsCode'
 import CaptchaPopup from '../components/CaptchaPopup.vue'
+import { checkPassword } from '../utils/password'
 
 const router = useRouter()
 const loading = ref(false)
+// 同意是注册的前置条件，后端也会校验（RegisterRequest.agreementAccepted），这里只是提前拦一下
+const agreed = ref(false)
 const form = ref({ username: '', nickname: '', phone: '', smsCode: '', password: '', confirm: '' })
 
 const { popupProps, sending, countdown, buttonText, requestCode, refreshCaptcha, confirm } = useSmsCode()
+
+/** 协议页的真实地址，交给 router 拼，免得改了路由或 base 之后链接失效 */
+function legalHref(key) {
+  return router.resolve({ name: `legal-${key}` }).href
+}
+
+// Vant 4 的 validator 返回字符串时，会把该字符串直接显示在字段下方
+function checkPasswordRule() {
+  return checkPassword(form.value.password, form.value.username) || true
+}
 
 function checkConfirm() {
   return form.value.confirm === form.value.password
@@ -138,6 +151,10 @@ async function onSendCode() {
 }
 
 async function onSubmit() {
+  if (!agreed.value) {
+    showToast('请先阅读并同意用户协议与隐私政策')
+    return
+  }
   loading.value = true
   try {
     await register({
@@ -145,7 +162,8 @@ async function onSubmit() {
       nickname: form.value.nickname,
       phone: form.value.phone,
       smsCode: form.value.smsCode,
-      password: form.value.password
+      password: form.value.password,
+      agreementAccepted: true
     })
     showToast('注册成功，请登录')
     router.replace('/login')
@@ -165,17 +183,17 @@ async function onSubmit() {
   letter-spacing: 2px;
   color: var(--xinyu-accent);
 }
-.register__slogan {
-  margin-top: 6px;
-  font-size: 13px;
+.register__agree {
+  margin: 16px 20px 0;
+  align-items: flex-start;
+}
+.register__agree-text {
+  font-size: 12.5px;
   line-height: 1.6;
   color: var(--van-text-color-2);
 }
-.register__hint {
-  margin: 12px 20px 0;
-  font-size: 12px;
-  line-height: 1.6;
-  color: var(--van-text-color-2);
+.register__agree-text a {
+  color: var(--xinyu-accent);
 }
 .submit {
   margin: 24px 16px 0;

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 启动阶段的窗口底色，跟 H5 夜间背景色对齐，避免 WebView 首帧白闪 -->
+    <color name="xinyu_boot">#06101A</color>
+</resources>
