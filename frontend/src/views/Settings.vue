@@ -13,6 +13,14 @@
       </div>
     </div>
 
+    <van-notice-bar
+      v-if="forcePassword"
+      left-icon="warning-o"
+      wrapable
+      :scrollable="false"
+      text="当前是首次登录的初始密码，请先修改密码后再使用其它功能"
+    />
+
     <van-cell-group inset title="账号">
       <van-cell title="昵称" icon="edit" :value="user?.nickname || '未设置'" is-link @click="openNickname" />
       <van-cell
@@ -236,10 +244,11 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { showConfirmDialog, showToast } from 'vant'
 import { useUserStore } from '../stores/user'
+import { logoutAndClear } from '../utils/session'
 import { useOfflineStore } from '../stores/offline'
 import { clearApiCache } from '../offline/cache'
 import { clearOutbox } from '../offline/outbox'
@@ -271,6 +280,7 @@ import { LEGAL_VERSION } from '../config/legal'
 import CaptchaPopup from '../components/CaptchaPopup.vue'
 import { checkPassword } from '../utils/password'
 
+const route = useRoute()
 const router = useRouter()
 const userStore = useUserStore()
 const offlineStore = useOfflineStore()
@@ -287,6 +297,8 @@ const fileInput = ref(null)
 
 const showNickname = ref(false)
 const nickname = ref('')
+// 初始密码未改：进来就直接弹改密，且不给关掉，避免带着默认口令用下去
+const forcePassword = computed(() => !!userStore.user?.mustChangePassword)
 const showPassword = ref(false)
 const pwd = ref({ oldPassword: '', newPassword: '', confirm: '' })
 const showPhone = ref(false)
@@ -437,11 +449,21 @@ async function savePassword() {
       newPassword: pwd.value.newPassword
     })
     showPassword.value = false
-    showToast('密码修改成功')
+    // 改密会让服务端把 token_version +1，当前 token 立刻失效（其它设备也一起下线），
+    // 所以这里必须回到登录页用新密码重新登录，否则接下来每个请求都是 401
+    userStore.logout()
+    showToast('密码已修改，请用新密码重新登录')
+    router.replace({ name: 'login' })
   } finally {
     saving.value = false
   }
 }
+
+onMounted(() => {
+  if (route.query.forcePassword === '1' || forcePassword.value) {
+    openPassword()
+  }
+})
 
 function openPhone() {
   phoneForm.value = { phone: '', smsCode: '', password: '' }
@@ -467,9 +489,12 @@ async function savePhone() {
   }
   saving.value = true
   try {
-    userStore.setUser(await changePhone({ ...phoneForm.value }))
+    await changePhone({ ...phoneForm.value })
     showPhone.value = false
-    showToast('手机号已更新')
+    // 换手机号同样会吊销旧 token，重新登录一次最省事也最安全
+    userStore.logout()
+    showToast('手机号已更新，请重新登录')
+    router.replace({ name: 'login' })
   } finally {
     saving.value = false
   }
@@ -567,7 +592,7 @@ async function confirmDelete(action) {
 
 async function onLogout() {
   await showConfirmDialog({ title: '退出登录', message: '确定要退出当前账号吗？' })
-  userStore.logout()
+  await logoutAndClear()
   router.replace('/login')
 }
 

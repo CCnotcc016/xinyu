@@ -20,6 +20,8 @@ import java.util.Date;
 @RequiredArgsConstructor
 public class JwtUtil {
 
+    private static final String TOKEN_VERSION_CLAIM = "tv";
+
     private final JwtProperties jwtProperties;
     private SecretKey key;
 
@@ -41,12 +43,19 @@ public class JwtUtil {
         this.key = Keys.hmacShaKeyFor(keyBytes);
     }
 
-    public String generateToken(Long userId, String username) {
+    /**
+     * 签发 token。
+     *
+     * <p>带上 tokenVersion：改密码 / 换手机号 / 退出登录时数据库里 +1，
+     * 之前签发的 token 立刻失效，不用再等 24 小时自然过期。</p>
+     */
+    public String generateToken(Long userId, String username, int tokenVersion) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + jwtProperties.getExpiration());
         return Jwts.builder()
                 .setSubject(String.valueOf(userId))
                 .claim("username", username)
+                .claim(TOKEN_VERSION_CLAIM, tokenVersion)
                 .setIssuedAt(now)
                 .setExpiration(expiry)
                 .signWith(key, SignatureAlgorithm.HS256)
@@ -55,6 +64,12 @@ public class JwtUtil {
 
     public Long parseUserId(String token) {
         return Long.valueOf(parseClaims(token).getSubject());
+    }
+
+    /** token 里的版本号；老 token 没有这个字段时按 0 处理 */
+    public int parseTokenVersion(String token) {
+        Object raw = parseClaims(token).get(TOKEN_VERSION_CLAIM);
+        return raw instanceof Number n ? n.intValue() : 0;
     }
 
     public boolean isValid(String token) {

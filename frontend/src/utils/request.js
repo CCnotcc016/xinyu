@@ -60,6 +60,10 @@ request.interceptors.response.use(
       const error = new Error(res.message || '请求失败')
       // 保留业务错误码，页面需要区分具体原因时（如验证码答错要换图）才判断得了
       error.code = res.code
+      // 首次登录的初始密码：除了改密，其它接口都会被后端拦下，这里直接把人送到改密弹窗
+      if (res.code === 1028) {
+        router.replace({ name: 'settings', query: { forcePassword: '1' } })
+      }
       return Promise.reject(markHandled(error))
     }
     reportReachable()

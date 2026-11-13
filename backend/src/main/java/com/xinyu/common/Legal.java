@@ -13,7 +13,7 @@ package com.xinyu.common;
 public final class Legal {
 
     /** 现行版本，与 frontend/src/config/legal.js 的 LEGAL_VERSION 一一对应 */
-    public static final String CURRENT_VERSION = "1.3";
+    public static final String CURRENT_VERSION = "1.4";
 
     private Legal() {
     }

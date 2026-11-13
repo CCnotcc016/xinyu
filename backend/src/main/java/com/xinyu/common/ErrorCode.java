@@ -35,6 +35,7 @@ public enum ErrorCode {
     PASSWORD_SAME(1024, "新密码不能与原密码相同"),
     ACCOUNT_LOCKED(1026, "密码错误次数过多，账号已被临时锁定"),
     PASSWORD_TOO_WEAK(1027, "密码强度不足"),
+    MUST_CHANGE_PASSWORD(1028, "首次登录请先修改密码"),
     POST_IMAGE_TOO_LARGE(1025, "单张图片不能超过 5MB"),
     DIARY_NOT_FOUND(2001, "日记不存在"),
     SUPPORT_CONVERSATION_NOT_FOUND(2002, "会话不存在或已被其他客服接手"),

@@ -27,7 +27,24 @@ public class AdminDiaryVO {
     private String aiStatus;
     /** 内容命中自残 / 自杀关键词，后台详情里给出提醒 */
     private Boolean crisisSupport;
+    /** 正文是否已被隐藏：列表接口默认不返回正文，需走「查看原文」并填理由 */
+    private Boolean contentHidden;
     private LocalDateTime createdAt;
+
+    /**
+     * 列表用：只给元数据，不带正文和 AI 回复。
+     *
+     * <p>后台「日记管理」原先默认把所有用户（含私密日记）的正文铺在列表里，
+     * 和隐私政策「管理员看不到私密内容」直接冲突。列表只留判断所需的最小信息，
+     * 真需要看正文时必须从单条日记走 {@link #from} 并写明理由（记审计日志）。</p>
+     */
+    public static AdminDiaryVO fromMeta(Diary diary, String username, String nickname, boolean crisisSupport) {
+        AdminDiaryVO vo = from(diary, username, nickname, crisisSupport);
+        vo.content = null;
+        vo.aiReply = null;
+        vo.contentHidden = true;
+        return vo;
+    }
 
     public static AdminDiaryVO from(Diary diary, String username, String nickname, boolean crisisSupport) {
         AdminDiaryVO vo = new AdminDiaryVO();
@@ -50,6 +67,7 @@ public class AdminDiaryVO {
             vo.aiReply = CrisisSupportService.CRISIS_REPLY;
             vo.aiStatus = "CRISIS";
         }
+        vo.contentHidden = false;
         vo.createdAt = diary.getCreatedAt();
         return vo;
     }

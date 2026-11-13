@@ -33,6 +33,10 @@ public class User {
     private Integer failedAttempts;
     /** 登录锁定到期时间，NULL 表示未锁定 */
     private LocalDateTime lockedUntil;
+    /** 1 = 首次登录必须先改密码（管理员初始化账号） */
+    private Integer mustChangePassword;
+    /** JWT 版本号：改密码 / 换手机号 / 退出登录时 +1，签发出去的旧 token 立即失效 */
+    private Integer tokenVersion;
     private LocalDateTime createdAt;
     // 同 Diary：交给数据库的 ON UPDATE CURRENT_TIMESTAMP 维护，避免旧值写回后时间戳不动
     @TableField(value = "updated_at", updateStrategy = FieldStrategy.NEVER)

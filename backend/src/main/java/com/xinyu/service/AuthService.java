@@ -76,6 +76,19 @@ public class AuthService {
     }
 
     /**
+     * 退出登录：把 token_version +1，让当前（以及所有设备上）的旧 token 立即失效。
+     *
+     * <p>以前「退出」只清前端 localStorage，token 还能继续用到自然过期 ——
+     * 设备被借走 / 被抓包的人，退不退出没区别。</p>
+     */
+    @Transactional(rollbackFor = Exception.class)
+    public void logout(Long userId) {
+        userMapper.update(null, new com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper<User>()
+                .eq(User::getId, userId)
+                .setSql("token_version = token_version + 1"));
+    }
+
+    /**
      * 登录。
      *
      * <p>三道关：账号未锁定 → 密码正确 → 账号未被禁用。
@@ -107,7 +120,8 @@ public class AuthService {
             throw new BusinessException(ErrorCode.USER_DISABLED);
         }
         loginAttemptService.onSuccess(user);
-        String token = jwtUtil.generateToken(user.getId(), user.getUsername());
+        String token = jwtUtil.generateToken(user.getId(), user.getUsername(),
+                user.getTokenVersion() == null ? 0 : user.getTokenVersion());
         return LoginResponse.builder()
                 .token(token)
                 .user(UserVO.from(user))

@@ -13,6 +13,6 @@ import org.springframework.stereotype.Component;
 public class JwtProperties {
 
     private String secret = "change-me-to-a-long-random-secret-key-please-32chars";
-    /** 有效期，单位毫秒 */
-    private long expiration = 7 * 24 * 60 * 60 * 1000L;
+    /** 有效期，单位毫秒。默认 24 小时：token 泄漏后的攻击窗口越短越好 */
+    private long expiration = 24 * 60 * 60 * 1000L;
 }

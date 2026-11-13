@@ -1,11 +1,12 @@
--- 初始化数据：默认管理员 + 常用标签
+-- 初始化数据：常用标签
 USE `xinyu`;
 
--- 默认管理员：admin / zNc40171316（BCrypt 哈希，如需更换请重新生成）
--- 注意：该语句仅在 admin 不存在时执行，修改此处不会影响已存在的账号
-INSERT INTO `user` (`username`, `password_hash`, `nickname`, `role`, `status`)
-SELECT 'admin', '$2a$10$VaUmLpwbPO8WUX7NPbUy9urehsdCn/OQ7K.A5xX9h06E0VpuetvZm', '系统管理员', 'ADMIN', 1
-WHERE NOT EXISTS (SELECT 1 FROM `user` WHERE `username` = 'admin');
+-- 这里刻意不再写死管理员账号。
+-- 旧版本在 SQL 里 INSERT 了一个密码公开的管理员，只要部署到公网就等于把后台交出去。
+-- 现在管理员由 AdminBootstrap 在启动时按环境变量创建（ADMIN_INIT_USERNAME / ADMIN_INIT_PASSWORD）：
+--   · 密码必须满足 PasswordPolicy（8-32 位、字母+数字、非弱口令）；
+--   · 只在库里一个可用管理员都没有时才创建，不会覆盖已有账号；
+--   · 创建的账号带 must_change_password=1，首次登录必须先改密码。
 
 -- 情绪标签
 INSERT INTO `tag` (`name`, `type`) VALUES

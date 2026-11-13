@@ -9,6 +9,7 @@ import com.xinyu.common.PageResult;
 import com.xinyu.dto.AdminDiaryVO;
 import com.xinyu.dto.ReportVO;
 import com.xinyu.dto.UserVO;
+import com.xinyu.entity.AdminAuditLog;
 import com.xinyu.entity.CrisisAlert;
 import com.xinyu.entity.Diary;
 import com.xinyu.entity.DiaryTag;
@@ -20,6 +21,7 @@ import com.xinyu.entity.SupportConversation;
 import com.xinyu.entity.SupportMessage;
 import com.xinyu.entity.TreeholePost;
 import com.xinyu.entity.User;
+import com.xinyu.mapper.AdminAuditLogMapper;
 import com.xinyu.mapper.CrisisAlertMapper;
 import com.xinyu.mapper.DiaryMapper;
 import com.xinyu.mapper.DiaryTagMapper;
@@ -38,6 +40,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.StringUtils;
 
+import java.time.LocalDateTime;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -66,6 +69,7 @@ public class AdminService {
     private final CrisisSupportService crisisSupportService;
     private final AccountPurgeService accountPurgeService;
     private final NotificationService notificationService;
+    private final AdminAuditLogMapper auditLogMapper;
 
     public PageResult<UserVO> listUsers(long page, long size, String keyword) {
         Page<User> result = userMapper.selectPage(new Page<>(page, size),
@@ -163,17 +167,48 @@ public class AdminService {
                     User owner = owners.get(diary.getUserId());
                     String nickname = owner == null || !StringUtils.hasText(owner.getNickname())
                             ? "用户" : owner.getNickname();
-                    return AdminDiaryVO.from(diary, owner == null ? null : owner.getUsername(),
+                    // 列表只给元数据：正文 / AI 回复要单独申请查看（见 revealDiary）
+                    return AdminDiaryVO.fromMeta(diary, owner == null ? null : owner.getUsername(),
                             nickname, crisisSupportService.containsCrisis(diary.getContent()));
                 })
                 .toList();
         return PageResult.of(result.getTotal(), page, size, vos);
     }
 
+    /**
+     * 查看日记原文：必须写明理由，并写一条审计日志。
+     *
+     * <p>后台默认只看到元数据。确实需要看正文（例如危机预警跟进、举报核实）时，
+     * 走这个接口把「谁在什么时候看了谁的哪条日记、为什么」记下来。</p>
+     */
+    @Transactional
+    public AdminDiaryVO revealDiary(Long id, String reason) {
+        String why = reason == null ? "" : reason.trim();
+        if (why.length() < 5) {
+            throw new BusinessException(ErrorCode.BAD_REQUEST.getCode(), "请填写查看正文的理由（至少 5 个字）");
+        }
+        Diary diary = diaryMapper.selectById(id);
+        if (diary == null) {
+            throw new BusinessException(ErrorCode.DIARY_NOT_FOUND);
+        }
+        writeAuditStrict(AdminAuditLog.ACTION_REVEAL_DIARY, "DIARY", id, diary.getUserId(), why);
+        User owner = userMapper.selectById(diary.getUserId());
+        String nickname = owner == null || !StringUtils.hasText(owner.getNickname())
+                ? "用户" : owner.getNickname();
+        return AdminDiaryVO.from(diary, owner == null ? null : owner.getUsername(), nickname,
+                crisisSupportService.containsCrisis(diary.getContent()));
+    }
+
     @Transactional
     public void deleteDiary(Long id) {
+        Diary diary = diaryMapper.selectById(id);
         diaryMapper.deleteById(id);
         diaryTagMapper.delete(new LambdaQueryWrapper<DiaryTag>().eq(DiaryTag::getDiaryId, id));
+        // 用户删了日记，预警里就不该再留着这段正文（否则这段隐私就删不干净了）
+        clearAlertContent(CrisisAlert.TARGET_DIARY, id);
+        if (diary != null) {
+            writeAudit(AdminAuditLog.ACTION_DELETE_DIARY, "DIARY", id, diary.getUserId(), "后台删除日记");
+        }
     }
 
     public PageResult<TreeholePost> listPosts(long page, long size, Integer status) {
@@ -195,17 +230,21 @@ public class AdminService {
 
     /**
      * 彻底删除帖子：帖子的评论、点赞是它的从属数据，一并清掉。
-     * 指向它的举报与危机预警故意保留 —— 举报页会把目标显示为「(已删除)」，
-     * 预警页存的是内容摘要和手机号，删帖后仍要能联系到当事人。
+     * 指向它的举报故意保留 —— 举报页会把目标显示为「(已删除)」，处理链路仍然完整。
+     * 危机预警保留记录但清空正文摘要：既不影响后续跟进，也不留存正文内容。
      */
     @Transactional
     public void deletePost(Long id) {
         if (postMapper.selectById(id) == null) {
             throw new BusinessException(ErrorCode.POST_NOT_FOUND);
         }
+        TreeholePost post = postMapper.selectById(id);
         commentMapper.delete(new LambdaQueryWrapper<PostComment>().eq(PostComment::getPostId, id));
         likeMapper.delete(new LambdaQueryWrapper<PostLike>().eq(PostLike::getPostId, id));
         postMapper.deleteById(id);
+        clearAlertContent(CrisisAlert.TARGET_POST, id);
+        writeAudit(AdminAuditLog.ACTION_DELETE_POST, "POST", id,
+                post == null ? null : post.getUserId(), "后台删除帖子");
     }
 
     public PageResult<PostComment> listComments(long page, long size) {
@@ -339,6 +378,58 @@ public class AdminService {
             log.warn("批量加载举报目标内容失败", e);
         }
         return contents;
+    }
+
+    /**
+     * 清空某条目标对应预警里的正文摘要（保留记录，跟进链路不断）。
+     */
+    private void clearAlertContent(String targetType, Long targetId) {
+        try {
+            alertContentUpdate(targetType, targetId);
+        } catch (Exception e) {
+            log.warn("清理危机预警摘要失败: {}", e.getMessage());
+        }
+    }
+
+    private void alertContentUpdate(String targetType, Long targetId) {
+        crisisAlertMapper.update(null, new LambdaUpdateWrapper<CrisisAlert>()
+                .eq(CrisisAlert::getTargetType, targetType)
+                .eq(CrisisAlert::getTargetId, targetId)
+                .set(CrisisAlert::getContent, null));
+    }
+
+    /** 删除类操作的审计：写失败只告警，不能让删除本身回滚 */
+    private void writeAudit(String action, String targetType, Long targetId, Long targetUserId, String reason) {
+        try {
+            insertAudit(action, targetType, targetId, targetUserId, reason);
+        } catch (Exception e) {
+            log.warn("写审计日志失败: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * 查看私密正文的审计：写失败就要中止本次查看。
+     * 「每一次查看都留痕」是隐私政策里写死的承诺，没有痕迹的查看等于没承诺。
+     */
+    private void writeAuditStrict(String action, String targetType, Long targetId, Long targetUserId, String reason) {
+        try {
+            insertAudit(action, targetType, targetId, targetUserId, reason);
+        } catch (Exception e) {
+            log.error("写审计日志失败，已拒绝本次查看: {}", e.getMessage());
+            throw new BusinessException(ErrorCode.BAD_REQUEST.getCode(), "审计日志写入失败，暂时无法查看正文");
+        }
+    }
+
+    private void insertAudit(String action, String targetType, Long targetId, Long targetUserId, String reason) {
+        AdminAuditLog logRow = new AdminAuditLog();
+        logRow.setAdminId(SecurityUtil.getCurrentUserId());
+        logRow.setAction(action);
+        logRow.setTargetType(targetType);
+        logRow.setTargetId(targetId);
+        logRow.setTargetUserId(targetUserId);
+        logRow.setReason(reason);
+        logRow.setCreatedAt(LocalDateTime.now());
+        auditLogMapper.insert(logRow);
     }
 
     private static String key(String type, Long id) {

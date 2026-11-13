@@ -20,6 +20,8 @@ CREATE TABLE IF NOT EXISTS `user` (
     `status`        TINYINT      NOT NULL DEFAULT 1 COMMENT '状态：1正常 0禁用',
     `failed_attempts` INT        NOT NULL DEFAULT 0 COMMENT '连续登录失败次数，登录成功清零',
     `locked_until`    DATETIME   DEFAULT NULL COMMENT '登录锁定到期时间，NULL 表示未锁定',
+    `must_change_password` TINYINT NOT NULL DEFAULT 0 COMMENT '1 = 首次登录必须改密码（管理员初始化账号）',
+    `token_version`   INT        NOT NULL DEFAULT 0 COMMENT 'JWT 版本号：改密码 / 换手机号 / 退出登录时 +1，旧 token 立即失效',
     `created_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
     `updated_at`    DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     PRIMARY KEY (`id`),
@@ -278,3 +280,18 @@ CREATE TABLE IF NOT EXISTS `sensitive_word` (
     PRIMARY KEY (`id`),
     UNIQUE KEY `uk_word` (`word`)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT ='敏感词库';
+
+-- 管理员敏感操作审计（v3.6）：查看用户私密日记、删除内容等必须留痕
+CREATE TABLE IF NOT EXISTS `admin_audit_log` (
+    `id`          BIGINT       NOT NULL AUTO_INCREMENT,
+    `admin_id`    BIGINT       NOT NULL COMMENT '操作管理员',
+    `action`      VARCHAR(40)  NOT NULL COMMENT 'REVEAL_DIARY / DELETE_DIARY / DELETE_POST / DELETE_USER',
+    `target_type` VARCHAR(20)  NOT NULL COMMENT 'DIARY / POST / USER',
+    `target_id`   BIGINT       NOT NULL COMMENT '目标对象 ID',
+    `target_user_id` BIGINT    DEFAULT NULL COMMENT '当事用户（被查看 / 被删除内容的作者）',
+    `reason`      VARCHAR(200) DEFAULT NULL COMMENT '管理员填写的理由（私密内容必须填）',
+    `created_at`  DATETIME     NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (`id`),
+    KEY `idx_admin_time` (`admin_id`, `created_at`),
+    KEY `idx_target` (`target_type`, `target_id`)
+) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4 COMMENT ='管理员敏感操作审计日志';

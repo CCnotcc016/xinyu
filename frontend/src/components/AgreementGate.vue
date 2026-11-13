@@ -54,6 +54,7 @@ import { showToast } from 'vant'
 import { LEGAL_CHANGELOG, LEGAL_EFFECTIVE_DATE, LEGAL_VERSION } from '../config/legal'
 import { acceptAgreement } from '../api/user'
 import { useUserStore } from '../stores/user'
+import { logoutAndClear } from '../utils/session'
 
 const route = useRoute()
 const router = useRouter()
@@ -102,9 +103,9 @@ async function confirm() {
   }
 }
 
-function onQuit() {
+async function onQuit() {
   // 不同意的唯一出口就是离开，而不是把弹窗关掉继续用
-  userStore.logout()
+  await logoutAndClear()
   router.replace({ name: 'login' })
 }
 </script>

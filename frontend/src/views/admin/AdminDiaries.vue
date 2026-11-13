@@ -3,15 +3,16 @@
     <van-cell title="查看账号" icon="friends-o" :value="ownerLabel" is-link @click="openPicker" />
 
     <van-list v-model:loading="loading" v-model:error="error" :finished="finished" finished-text="没有更多了" error-text="加载失败，点击重新加载" @load="onLoad">
+      <!-- 列表不再直接铺正文：私密日记的正文属于用户，后台默认只看元数据 -->
       <van-cell
         v-for="d in diaries"
         :key="d.id"
-        :title="preview(d.content)"
-        :label="`${d.nickname}（@${d.username}）· ${formatTime(d.createdAt)}`"
+        :title="`${emotionText(d)} · ${d.privacy === 'PUBLIC' ? '公开' : '私密'}`"
+        :label="`${d.nickname}（@${d.username}）· ${formatTime(d.createdAt)}${d.crisisSupport ? ' · ⚠️ 命中危机词' : ''}`"
       >
         <template #right-icon>
           <div class="ops">
-            <van-button size="small" plain type="primary" @click="openDetail(d)">查看</van-button>
+            <van-button size="small" plain type="primary" @click="openReveal(d)">查看原文</van-button>
             <van-button size="small" type="danger" @click="onDelete(d.id)">删除</van-button>
           </div>
         </template>
@@ -40,6 +41,26 @@
           @click="chooseUser(u)"
         />
       </van-list>
+    </van-popup>
+
+    <!-- 查看正文必须先写理由：后端会记审计日志（谁、何时、看了哪条、为什么） -->
+    <van-popup v-model:show="showReveal" round position="bottom" class="reveal">
+      <div class="reveal__title">查看日记原文</div>
+      <p class="reveal__tip">
+        日记正文属于用户隐私。仅在危机跟进、举报核实等确有必要时查看，理由会被记录审计日志。
+      </p>
+      <van-field
+        v-model="revealReason"
+        rows="2"
+        autosize
+        type="textarea"
+        maxlength="120"
+        show-word-limit
+        placeholder="请填写查看理由（至少 5 个字），例如：危机预警跟进"
+      />
+      <div class="reveal__ops">
+        <van-button round block :loading="revealing" @click="confirmReveal">确认查看</van-button>
+      </div>
     </van-popup>
 
     <!-- 日记详情：关闭时销毁内容，否则弹窗会留着上一篇的滚动位置，
@@ -87,7 +108,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { showConfirmDialog, showToast } from 'vant'
-import { listDiaries, deleteDiary, listUsers } from '../../api/admin'
+import { listDiaries, revealDiary, deleteDiary, listUsers } from '../../api/admin'
 
 const diaries = ref([])
 const page = ref(1)
@@ -100,6 +121,11 @@ const owner = ref(null)
 const showPicker = ref(false)
 const showDetail = ref(false)
 const current = ref(null)
+// 查看正文的申请弹窗
+const showReveal = ref(false)
+const revealTarget = ref(null)
+const revealReason = ref('')
+const revealing = ref(false)
 
 const users = ref([])
 const keyword = ref('')
@@ -110,10 +136,6 @@ const userFinished = ref(false)
 const ownerLabel = computed(() =>
   owner.value ? `${owner.value.nickname || owner.value.username}（@${owner.value.username}）` : '全部用户'
 )
-
-function preview(text) {
-  return text && text.length > 40 ? text.slice(0, 40) + '…' : text
-}
 
 function formatTime(dt) {
   return dt ? dt.replace('T', ' ').slice(0, 16) : ''
@@ -198,9 +220,27 @@ function chooseUser(user) {
   resetDiaries()
 }
 
-function openDetail(diary) {
-  current.value = diary
-  showDetail.value = true
+function openReveal(diary) {
+  revealTarget.value = diary
+  revealReason.value = ''
+  showReveal.value = true
+}
+
+async function confirmReveal() {
+  if (!revealTarget.value) return
+  const reason = revealReason.value.trim()
+  if (reason.length < 5) {
+    showToast('请填写查看理由（至少 5 个字）')
+    return
+  }
+  revealing.value = true
+  try {
+    current.value = await revealDiary(revealTarget.value.id, reason)
+    showReveal.value = false
+    showDetail.value = true
+  } finally {
+    revealing.value = false
+  }
 }
 
 async function onDelete(id) {
@@ -244,6 +284,23 @@ async function onDelete(id) {
   position: sticky;
   top: 0;
   z-index: 1;
+}
+.reveal {
+  padding: 16px 16px 24px;
+}
+.reveal__title {
+  font-size: 16px;
+  font-weight: 600;
+  margin-bottom: 8px;
+}
+.reveal__tip {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--van-text-color-2);
+  margin: 0 0 12px;
+}
+.reveal__ops {
+  padding: 16px 4px 0;
 }
 .detail__block {
   padding: 4px 16px 8px;

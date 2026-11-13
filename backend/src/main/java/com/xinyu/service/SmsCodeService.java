@@ -84,14 +84,17 @@ public class SmsCodeService {
     }
 
     /**
-     * 真正把验证码发给用户。当前是模拟实现，只写日志。
+     * 真正把验证码发给用户。当前是模拟实现。
      *
-     * <p>接入真实短信服务时替换这里：调用 SDK 发送模板短信，
-     * 并且不要再把验证码写进日志（日志会被采集，等于泄漏验证码）。</p>
+     * <p>刻意 <b>不打印验证码本身</b>：日志通常被集中采集、长期留存、权限比数据库宽松，
+     * 把 OTP 写进去等于给所有能看日志的人开了后门。需要在本机看到验证码时，
+     * 开发环境已打开 {@code xinyu.sms.echo-code}，验证码会在接口响应里回显。</p>
+     *
+     * <p>接入真实短信服务时替换这里：调用 SDK 发送模板短信。</p>
      */
     private void deliver(String phone, String code) {
-        log.info("【模拟短信】向 {} 发送验证码 {}，{} 秒内有效",
-                mask(phone), code, properties.getExpireSeconds());
+        log.info("【模拟短信】已向 {} 生成验证码，{} 秒内有效（验证码不落日志）",
+                mask(phone), properties.getExpireSeconds());
     }
 
     private String randomCode() {

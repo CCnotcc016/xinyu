@@ -76,6 +76,17 @@ public class AdminController {
         return Result.ok(adminService.listDiaries(page, size, userId));
     }
 
+    /**
+     * 查看日记原文：必须带理由，服务端会写审计日志。
+     * 列表接口默认不返回正文，避免后台成规模浏览用户私密内容。
+     */
+    @PostMapping("/diaries/{id}/reveal")
+    public Result<AdminDiaryVO> revealDiary(@PathVariable Long id,
+                                            @RequestBody(required = false) Map<String, String> body) {
+        String reason = body == null ? null : body.get("reason");
+        return Result.ok(adminService.revealDiary(id, reason));
+    }
+
     @DeleteMapping("/diaries/{id}")
     public Result<Void> deleteDiary(@PathVariable Long id) {
         adminService.deleteDiary(id);

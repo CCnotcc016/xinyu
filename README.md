@@ -123,8 +123,14 @@ cp .env.example .env
 | `AI_API_KEY` | 否 | 留空时 AI 自动降级为离线 Mock 陪伴回复，功能仍可演示 |
 | `AI_BASE_URL` | 否 | 默认 `https://api.deepseek.com` |
 | `AI_MODEL` | 否 | 默认 `deepseek-chat` |
-| `JWT_SECRET` | 生产必填 | `openssl rand -hex 32` 生成 |
-| `MYSQL_PASSWORD` | Docker 部署用 | MySQL root 密码 |
+| `JWT_SECRET` | 生产必填 | `openssl rand -hex 32` 生成；缺失时后端启动失败 |
+| `JWT_EXPIRATION` | 否 | token 有效期（毫秒），默认 `86400000`（24 小时） |
+| `MYSQL_ROOT_PASSWORD` | Docker 部署必填 | MySQL root 密码（compose 不再有默认值） |
+| `MYSQL_APP_PASSWORD` | Docker 部署必填 | 后端使用的应用账号密码（对应 `MYSQL_USER`，默认 `xinyu`） |
+| `REDIS_PASSWORD` | Docker 部署必填 | Redis 密码（未设置时 Redis 启动即失败） |
+| `ADMIN_INIT_USERNAME` / `ADMIN_INIT_PASSWORD` | 首次部署必填一次 | 库里没有任何可用管理员时，用它创建首个管理员；创建后必须立即改密 |
+| `HTTP_PORT` / `HTTPS_PORT` | 否 | Nginx 对外端口，默认 80 / 443 |
+| `TLS_DIR` | 启用 HTTPS 时必填 | 证书目录（含 `fullchain.pem`、`privkey.pem`） |
 
 > 换机器或轮换密钥时只改 `.env`，代码一行都不用动。
 
@@ -219,19 +225,29 @@ HTTP 下定位不可用也不会卡住页面：天气卡会明确提示「当前
 
 ### 5. 登录
 
-- 管理员：`admin / zNc40171316`
-- 普通用户：在前端「注册」页面注册后登录
+**仓库里不预置任何账号、也不写任何默认密码。** 第一次部署时用下面的方式创建管理员：
 
-本机还预置了一批演示账号（同样都是 `123456`，只想看界面效果时可以直接用）：
+```bash
+# 方式一：交给后端引导（推荐）
+# 库里没有任何启用的管理员时，后端会用这两个变量创建首个管理员
+ADMIN_INIT_USERNAME=admin \
+ADMIN_INIT_PASSWORD='你的强密码（至少 8 位，含字母和数字）' \
+bash scripts/run-dev.sh
+```
 
-| 账号 | 角色 | 昵称 | 预置内容 |
-| --- | --- | --- | --- |
-| `demo01` ~ `demo05` | 普通用户 | 小满 / 阿宁 / 竹间 / 十一 / 北岛 | 每人 3 篇日记、1~2 条树洞帖子（`demo01` 的帖子里有一条被贴主置顶的评论） |
-| `service01` / `service02` | 客服（STAFF） | 小语 / 小舟 | 无，用来演示「客服工作台」 |
+```bash
+# 方式二：脚本直接写库（密码只在本机终端输入，不进仓库）
+MYSQL_PASSWORD='数据库密码' bash scripts/init-admin.sh
+```
 
-> 这些账号由 `backend/src/main/resources/db/seed-demo.sql` 生成，全部用
-> `WHERE NOT EXISTS` 包住，重复执行只会补缺、不会重复插入。
-> **上线前请删掉这个文件或把其中的账号清空**，演示密码是公开的。
+创建出来的管理员 `must_change_password = 1`：**首次登录只能改密**，
+在改密完成前后端会用 `1028` 拦下除「改密 / 我的信息 / 登录」以外的所有接口。
+
+普通用户在前端「注册」页面注册后登录即可（v2.0 起注册需手机号 + 短信验证码）。
+
+> 本机开发（`dev` profile）会额外加载 `backend/src/main/resources/db/seed-demo.sql`，
+> 里面是演示用的普通用户 / 客服账号，方便只看界面效果。
+> 它**只在 `dev` profile 生效**，生产（`prod`）不会加载；仍然建议上线前删除该文件或清空其中的账号。
 
 > v2.0 起注册必须填手机号并完成短信验证码，发验证码前要先过图形人机验证。
 > 本机没有接短信服务商，开发环境（`dev` profile）会把图形验证码答案和短信验证码
@@ -511,7 +527,10 @@ cd frontend && npm install && npm run dev
 
 - [ ] `AI_API_KEY` 只存在于服务器环境变量 / `.env`，仓库里搜不到
 - [ ] `JWT_SECRET` 用 `openssl rand -hex 32` 生成，不是示例值
-- [ ] `MYSQL_PASSWORD` 不是 `root`
+- [ ] `MYSQL_ROOT_PASSWORD` / `MYSQL_APP_PASSWORD` 不是 `root`、不是示例值
+- [ ] `REDIS_PASSWORD` 已设置（Redis 不设密码 + 端口暴露等于把会话数据送人）
+- [ ] 管理员账号是新建的，并且已经改掉首次登录的初始密码
+- [ ] 已用 `docker-compose.tls.yml` 启用 HTTPS：`/api` 里带 JWT，明文 HTTP 等于把 token 送给同网段任何人
 - [ ] `.env` 在 `.gitignore` 中（本项目默认已包含）
 - [ ] 确认 `git log -S "sk-"` 搜不到历史 Key；提交过就必须吊销重建
 
@@ -536,6 +555,7 @@ cd frontend && npm install && npm run dev
   （`username` / `password` / `phone` / `smsCode` / `agreementAccepted: true`，`nickname` 可选；
   `agreementAccepted` 不是 `true` 会被参数校验直接挡住，前端不勾选也提交不了）
 - `POST /api/auth/login` 登录（返回 JWT）
+- `POST /api/auth/logout` 退出登录（服务端 `token_version` +1，**当前 token 立刻作废**，其它设备也一起下线）
 - `GET /api/auth/ping` 存活探测（不需要登录，不查库、不查 Redis；前端用它判断「后端有没有起来」）
 
 ### 个人中心（「我的 → 设置」）
@@ -728,7 +748,11 @@ cd frontend && npm install && npm run dev
 - `PUT /api/admin/users/{id}/status` 启用/禁用用户
 - `DELETE /api/admin/users/{id}` 删除用户（级联清理该用户的日记、标签关联、情绪统计、帖子及其评论/点赞、自己发的评论/点赞、相关举报、与客服的会话及其消息；如果被删账号是客服/管理员，其接手或结单过的会话会把 `assignee_id` / `closed_by_id` 置空，避免客服工作台出现找不到人的会话）
 - `GET /api/admin/diaries?page=&size=&userId=` 日记管理（`userId` 可选：传了就只看该账号的日记，
-  返回 `AdminDiaryVO`，带作者昵称/用户名与 `crisisSupport` 标记）/ `DELETE /api/admin/diaries/{id}` 删除日记
+  返回 `AdminDiaryVO`，带作者昵称/用户名与 `crisisSupport` 标记；**正文与 AI 回复恒为 `null`**，
+  `contentHidden: true` 提示前端「要点开才能看」）
+- `POST /api/admin/diaries/{id}/reveal` 查看日记原文（`{ "reason": "≥5 个字的理由" }`），
+  返回带正文的 `AdminDiaryVO`，同时写一条 `admin_audit_log`；**审计写失败直接拒绝查看**
+- `DELETE /api/admin/diaries/{id}` 删除日记（清空对应危机预警摘录并留审计）
 - `GET /api/admin/posts` / `PUT /api/admin/posts/{id}/status` 帖子管理
 - `DELETE /api/admin/posts/{id}` 删除帖子（连同该帖评论、点赞一起清理；指向它的举报与危机预警保留，举报页会显示「(已删除)」，预警页仍可联系当事人）
 - `GET /api/admin/comments` / `PUT /api/admin/comments/{id}/status` 评论管理
@@ -746,9 +770,10 @@ cd frontend && npm install && npm run dev
 - `GET /api/admin/sensitive-words?page=&size=&keyword=` 敏感词列表 / `POST /api/admin/sensitive-words?word=`
   新增（**查询参数**，不是 JSON）/ `DELETE /api/admin/sensitive-words/{id}` 删除；增删后立即重载词库
 
-> **危机预警与手机号**：`CrisisAlertVO.phone` 返回的是**明文手机号**，
-> 这是刻意的例外 —— 管理员需要能在紧急情况下联系到人，所以该接口只对
-> `ROLE_ADMIN` 开放，后台页面也明确标注「仅用于危机干预」。其他所有接口一律打码。
+> **危机预警与手机号**：`CrisisAlertVO.phone` 返回**打码手机号**（`139****0004`），
+> 与「我的」页面一致；需要联系当事人时走站内沟通或由当事人自己留下联系方式。
+> 预警里的 `content` 只是**命中关键词前后几十个字**的摘录，不是日记全文 ——
+> 要看全文必须走 `/api/admin/diaries/{id}/reveal` 并留痕。
 
 > **管理员自我保护**：`PUT /users/{id}/status`（禁用）与 `DELETE /users/{id}`
 > 会拒绝操作当前登录账号，分别返回 `1005 不能禁用当前登录的账号`、
@@ -845,6 +870,9 @@ mysql -uroot -p xinyu < backend/src/main/resources/db/upgrade-v3.0.sql
 mysql -uroot -p xinyu < backend/src/main/resources/db/upgrade-v3.3.sql
 # v3.4 给 diary 补了 client_uid 与唯一键 uk_user_client_uid（离线补传幂等用）
 mysql -uroot -p xinyu < backend/src/main/resources/db/upgrade-v3.4.sql
+# v3.6 安全加固：user.must_change_password / user.token_version、
+#      admin_audit_log（含 target_user_id，老库里没有这一列会自动补）、历史危机预警摘录收敛成短文本
+mysql -uroot -p xinyu < backend/src/main/resources/db/upgrade-v3.6.sql
 ```
 
 
@@ -933,6 +961,21 @@ mysql -uroot -p xinyu < backend/src/main/resources/db/upgrade-v3.4.sql
   - 只对新密码生效（注册 / 改密 / 建号），**老账号不影响登录**，否则演示账号直接进不去
   - 前端 `frontend/src/utils/password.js` 是同一套规则的镜像，只做预校验，最终以后端为准
 - 举报 → 管理员审核 → 下架／删除／封禁
+- **管理后台看不到日记正文（v3.6）**：列表只返回日期、情绪分、情绪标签、隐私级别；
+  要看全文必须 `POST /api/admin/diaries/{id}/reveal` 并**填写理由（≥5 字）**，
+  每次查看都会写进 `admin_audit_log`（谁、何时、哪一条、为什么），审计写失败就不给看
+- **JWT 可吊销（v3.6）**：`user.token_version` 进 token 的 `tv` 声明，
+  改密码 / 换手机号 / 退出登录时 +1，旧 token 立刻失效（`POST /api/auth/logout`）
+- **令牌不再到处撒（v3.6）**：`?token=` 只对 `/stream` 结尾的 SSE 接口生效，
+  其它接口一律只认 `Authorization` 头（URL 会进 access log、历史记录、Referer）
+- **首个管理员由环境变量引导（v3.6）**：仓库里不再有默认管理员，`ADMIN_INIT_PASSWORD`
+  必须满足密码强度，且账号带 `must_change_password=1`，改密前除「我的信息 / 改密码 / 同意协议」外全部 403（`1028`）
+- **危机关键词收紧（v3.6）**：只有明确的自伤意图 / 计划 / 告别才算高危（`不想活` `想去死` …），
+  「太累」「没意思」这类低危词只做温和回应、不生成预警；带否定的句子（`我没有不想活`）不误报。
+  预警摘录只保留**命中词前后共几十字**，历史长摘录由 `upgrade-v3.6.sql` 收敛
+- **容器不再裸奔（v3.6）**：`docker-compose.yml` 里 MySQL / Redis / 8080 都不再映射到宿主机，
+  Redis 强制 `--requirepass`，MySQL 密码走 `${...:?}`（不填直接启动失败）；
+  需要 HTTPS 时用 `docker-compose.tls.yml` + `nginx/nginx-tls.conf`
 - 密钥只从环境变量注入，仓库内无任何真实 Key（见 [🤖 AI 配置](#-ai-配置)）
 - 曾经出现在代码或聊天记录里的 Key，上线前必须吊销重建
 - **协议留痕**：注册强制勾选同意，老用户升级后必须读完弹窗才能继续用，
@@ -945,7 +988,10 @@ mysql -uroot -p xinyu < backend/src/main/resources/db/upgrade-v3.4.sql
 | --- | --- | --- |
 | 「我的」页面 / `GET /api/user/me` | `138****8000` | 一律打码 |
 | 后台用户列表 | 打码 | 管理员日常也不看全号 |
-| 后台危机预警 `/api/admin/crisis-alerts` | **明文** | 唯一的例外，仅供管理员在紧急情况下联系当事人 |
+| 后台危机预警 `/api/admin/crisis-alerts` | 打码 | 预警列表也不给全号，需要联系当事人时由管理员在站内沟通 |
+
+> 早期版本曾在危机预警里返回明文手机号，v3.6 起统一改成打码：
+> 「能看到工单」不等于「有权拿到电话号码」，能少给一个人就少给一个人。
 
 开发期两个 `echo-code` 开关默认只在 `dev` profile 打开（`application-dev.yml`），
 生产环境必须保持 `false`，否则验证码会跟着响应一起返回：
@@ -1580,15 +1626,41 @@ v2.3 新增三份法律文本，前端集中在 `frontend/src/config/legal.js` �
 
 ```bash
 cp .env.example .env
-# 编辑 .env，填入 AI_API_KEY、JWT_SECRET 等
+# 编辑 .env：JWT_SECRET、MYSQL_ROOT_PASSWORD、MYSQL_APP_PASSWORD、REDIS_PASSWORD 全部必填
 docker compose up -d --build
 ```
+
+**端口暴露（v3.1 起收紧）**
+
+| 服务 | 是否映射到宿主机 | 说明 |
+| --- | --- | --- |
+| Nginx（frontend） | ✅ `${HTTP_PORT:-80}` | 唯一对外入口 |
+| backend | ❌ 仅 compose 内网 | 走 Nginx `/api` 反代 |
+| MySQL | ❌ 仅 compose 内网 | 不再映射 3306，别再让整个局域网连库 |
+| Redis | ❌ 仅 compose 内网 | 已用 `--requirepass` 强制密码 |
+
+需要用客户端连库时临时开一条隧道即可，不要把 3306 长期 publish 出去：
+
+```bash
+docker compose exec mysql mysql -uxinyu -p xinyu
+```
+
+**启用 HTTPS（强烈建议）**
+
+```bash
+export TLS_DIR=/etc/letsencrypt/live/your.domain   # 目录里要有 fullchain.pem 与 privkey.pem
+docker compose -f docker-compose.yml -f docker-compose.tls.yml up -d --build
+```
+
+覆盖文件会把 Nginx 换成带 TLS 的配置：80 自动 301 到 443，并下发 HSTS、
+`X-Content-Type-Options`、`X-Frame-Options`、`Referrer-Policy` 等安全响应头。
 
 启动后：
 
 - 前端：`http://localhost`（Nginx 已加 `/uploads/` 反代，头像能正常显示）
-- 后端：`http://localhost:8080/api`
-- MySQL：`localhost:3306`（首次启动自动执行 `db/schema.sql` + `db/data.sql`，含 v2.0 的 `user.phone` 与 `crisis_alert`；v2.2 的 `post_comment.parent_id` 见 `db/upgrade-v2.2.sql`，v2.4 的 `post_comment.pinned_at` 与客服两张表见 `db/upgrade-v2.4.sql`，v2.4.1 的结单字段见 `db/upgrade-v2.4.1.sql`，生产库要手动跑一次）
+- 后端接口：`http://localhost/api`（后端 8080 只在 compose 内网可达）
+- MySQL：仅容器内可达（首次启动自动执行 `db/schema.sql`；`data.sql` 只剩标签等基础数据，
+  不再带任何账号。老库升级按顺序补 `upgrade-v3.6.sql` 等脚本，见 `backend/src/main/resources/db/`）
 
 上传的头像落在 `xinyu-uploads` 数据卷（容器内 `/app/uploads`），
 `docker compose down` 再 `up` 不会丢图；要彻底清空才需要 `docker compose down -v`。

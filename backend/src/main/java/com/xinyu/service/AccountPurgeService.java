@@ -2,6 +2,7 @@ package com.xinyu.service;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
 import com.baomidou.mybatisplus.core.conditions.update.LambdaUpdateWrapper;
+import com.xinyu.config.UploadProperties;
 import com.xinyu.entity.ChatMessage;
 import com.xinyu.entity.CrisisAlert;
 import com.xinyu.entity.Diary;
@@ -38,7 +39,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.StringUtils;
 
+import java.io.IOException;
+import java.nio.file.Files;
 import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
@@ -73,6 +77,7 @@ public class AccountPurgeService {
     private final FriendRequestMapper friendRequestMapper;
     private final ChatMessageMapper chatMessageMapper;
     private final NotificationMapper notificationMapper;
+    private final UploadProperties uploadProperties;
 
     /**
      * 彻底删除一个账号及其全部内容。
@@ -156,6 +161,9 @@ public class AccountPurgeService {
 
         // 7) 客服会话：用户自己的会话整条删掉（否则客服工作台会留下一个找不到用户的幽灵会话）；
         //    被删客服（或管理员）接手的会话回到「待接手」，结单人也要清空，避免显示已注销的昵称
+        //    自己发出的消息（例如客服回复）也要删：否则会话里会留下已注销账号的发言
+        messageMapper.delete(new LambdaQueryWrapper<SupportMessage>()
+                .eq(SupportMessage::getSenderId, userId));
         SupportConversation ownConversation = conversationMapper.selectOne(new LambdaQueryWrapper<SupportConversation>()
                 .eq(SupportConversation::getUserId, userId)
                 .last("LIMIT 1"));
@@ -171,8 +179,29 @@ public class AccountPurgeService {
                 .eq(SupportConversation::getClosedById, userId)
                 .set(SupportConversation::getClosedById, null));
 
+        String avatar = user.getAvatar();
         userMapper.deleteById(userId);
+        // 头像文件不在数据库里，注销时必须顺手删掉，否则 uploads 目录会留下
+        // 「用户名 + 头像」这对可识别信息（P1-7 删除残留）
+        deleteAvatarFile(avatar);
         log.info("账号数据已清理: userId={} username={}", userId, user.getUsername());
         return true;
+    }
+
+    /** 删除本地头像文件；外链头像和非法文件名直接跳过 */
+    private void deleteAvatarFile(String avatar) {
+        String prefix = uploadProperties.getPublicPrefix();
+        if (!StringUtils.hasText(avatar) || !avatar.startsWith(prefix + "/avatar/")) {
+            return;
+        }
+        String name = avatar.substring((prefix + "/avatar/").length());
+        if (name.contains("/") || name.contains("..")) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(uploadProperties.avatarDir().resolve(name));
+        } catch (IOException e) {
+            log.warn("头像文件删除失败（忽略）: {}", e.getMessage());
+        }
     }
 }

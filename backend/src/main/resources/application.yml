@@ -2,7 +2,10 @@ spring:
   application:
     name: xinyu
   profiles:
-    active: dev
+    # 默认走 prod：忘记设置 profile 时要「起不来」，而不是悄悄带着开发环境的
+    # echo-code（验证码回显）、默认 JWT 密钥上生产。本机开发由 scripts/run-dev.sh
+    # 或 .env 显式设置 SPRING_PROFILES_ACTIVE=dev。
+    active: ${SPRING_PROFILES_ACTIVE:prod}
   servlet:
     multipart:
       # 单文件上限按最宽松的树洞配图（5MB）设置，头像的 2MB 限制在 UserService 里单独校验；
@@ -27,7 +30,10 @@ server:
 mybatis-plus:
   configuration:
     map-underscore-to-camel-case: true
-    log-impl: org.apache.ibatis.logging.stdout.StdOutImpl
+    # 生产默认不打印 SQL：StdOutImpl 会把每条 SQL 的参数（手机号、日记正文、
+    # 密码哈希都在里面）原样刷进日志，日志被采集就等于数据泄漏。
+    # 本机开发要看 SQL 时由 application-dev.yml 覆盖成 StdOutImpl。
+    log-impl: org.apache.ibatis.logging.nologging.NoLoggingImpl
   global-config:
     db-config:
       id-type: auto
@@ -36,10 +42,17 @@ mybatis-plus:
 # 自定义业务配置
 xinyu:
   jwt:
-    # 开发环境用下面的占位值即可；生产环境见 application-prod.yml，缺 JWT_SECRET 会直接启动失败
-    secret: ${JWT_SECRET:dev-only-placeholder-secret-do-not-use-in-prod-32chars}
-    # 有效期（毫秒），默认 7 天
-    expiration: ${JWT_EXPIRATION:604800000}
+    # 不提供默认值：仓库里的占位密钥是公开的，谁拿到源码谁就能伪造管理员 token。
+    # 本机开发的值写在 application-dev.yml，生产环境必须注入 JWT_SECRET。
+    secret: ${JWT_SECRET:}
+    # 有效期（毫秒）。7 天太长：token 一旦泄漏，攻击窗口就是一整周。
+    # 现在默认 24 小时，配合 token_version 可以在改密码 / 退出登录时立刻作废旧 token。
+    expiration: ${JWT_EXPIRATION:86400000}
+  admin:
+    # 初始化管理员：仅在库里一个可用管理员都没有时创建，创建后必须首次登录改密。
+    # 不设默认密码，部署时在 .env 里填 ADMIN_INIT_PASSWORD（需满足密码强度要求）。
+    init-username: ${ADMIN_INIT_USERNAME:admin}
+    init-password: ${ADMIN_INIT_PASSWORD:}
   ai:
     provider: deepseek
     base-url: ${AI_BASE_URL:https://api.deepseek.com}

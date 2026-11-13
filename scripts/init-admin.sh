@@ -30,9 +30,16 @@ fi
 DB_HOST="${MYSQL_HOST:-127.0.0.1}"
 DB_PORT="${MYSQL_PORT:-3306}"
 DB_USER="${MYSQL_USER:-root}"
-DB_PASS="${MYSQL_PASSWORD:-root}"
+# 不再兜底成 root：脚本里写死口令，等于把「默认密码」又发了一遍
+DB_PASS="${MYSQL_PASSWORD:-}"
 DB_NAME="${MYSQL_DB:-xinyu}"
 API="${API:-http://127.0.0.1:8080/api}"
+
+if [ -z "$DB_PASS" ]; then
+  echo "❌ 请先设置 MYSQL_PASSWORD（或写入 .env）。示例：" >&2
+  echo "   MYSQL_PASSWORD='你的数据库密码' bash scripts/init-admin.sh" >&2
+  exit 1
+fi
 
 # ---------- 生成 BCrypt 哈希 ----------
 gen_hash() {

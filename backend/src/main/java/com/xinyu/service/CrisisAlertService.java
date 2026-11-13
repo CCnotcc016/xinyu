@@ -8,6 +8,7 @@ import com.xinyu.common.PageResult;
 import com.xinyu.dto.CrisisAlertHandleRequest;
 import com.xinyu.dto.CrisisAlertVO;
 import com.xinyu.dto.CrisisFollowUpRequest;
+import com.xinyu.dto.UserVO;
 import com.xinyu.entity.CrisisAlert;
 import com.xinyu.entity.User;
 import com.xinyu.mapper.CrisisAlertMapper;
@@ -42,8 +43,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class CrisisAlertService {
 
-    /** 摘要长度：够管理员判断是否需要介入即可，不做全文存档 */
-    private static final int EXCERPT_LENGTH = 500;
+    /**
+     * 摘要长度：旧版本把日记前 500 字整段存进预警表，等于给管理员开了一个
+     * 「绕过隐私设置读私密日记」的后门（日记页写的是"管理员看不到私密内容"）。
+     * 现在只留命中词附近的一小段，够判断是否需要介入即可。
+     */
+    private static final int EXCERPT_LENGTH = 60;
 
     private static final Set<String> HANDLE_STATUSES =
             Set.of(CrisisAlert.STATUS_HANDLED, CrisisAlert.STATUS_DISMISSED);
@@ -61,7 +66,7 @@ public class CrisisAlertService {
             return;
         }
         try {
-            String excerpt = excerpt(content);
+            String excerpt = excerpt(content, keyword);
             // 同一条内容重复提交（改日记 / 编辑帖子）时更新原记录，不刷屏
             CrisisAlert exists = alertMapper.selectOne(new LambdaQueryWrapper<CrisisAlert>()
                     .eq(CrisisAlert::getTargetType, targetType)
@@ -106,7 +111,7 @@ public class CrisisAlertService {
             alert.setTargetType(targetType);
             alert.setTargetId(targetId);
             alert.setKeyword(reason);
-            alert.setContent(excerpt(content));
+            alert.setContent(excerpt(content, reason));
             alert.setStatus(CrisisAlert.STATUS_PENDING);
             alertMapper.insert(alert);
             log.warn("危机预警：user={} target={}#{} 触发 {}", userId, targetType, targetId, reason);
@@ -210,8 +215,9 @@ public class CrisisAlertService {
         if (user != null) {
             vo.setUsername(user.getUsername());
             vo.setNickname(user.getNickname());
-            // 明文手机号：仅此接口，仅管理员，用于紧急联系
-            vo.setPhone(user.getPhone());
+            // 只给掩码：预警列表是批量浏览的，下发明文手机号等于把全站用户号码
+            // 暴露在浏览器里（XSS / 截图 / 客服转存都防不住）。紧急联系走线下台账。
+            vo.setPhone(UserVO.maskPhone(user.getPhone()));
         }
         return vo;
     }
@@ -229,15 +235,24 @@ public class CrisisAlertService {
         return id == null ? null : map.get(id);
     }
 
-    private String excerpt(String content) {
+    /**
+     * 只截命中词周围的一小段：既能让管理员判断语境（"我不想活了" vs "没有想死"），
+     * 又不会把整篇私密日记搬进预警表。
+     */
+    private String excerpt(String content, String keyword) {
         if (content == null) {
             return null;
         }
         String trimmed = content.trim();
-        // 列宽是 varchar(500)，省略号也占一位：多出来的这一个字符会让整条预警写不进去，
-        // 而写失败是被吞掉的（预警不能影响用户发日记），结果就是长日记静默漏预警。
-        return trimmed.length() <= EXCERPT_LENGTH
-                ? trimmed
-                : trimmed.substring(0, EXCERPT_LENGTH - 1) + "…";
+        if (trimmed.length() <= EXCERPT_LENGTH) {
+            return trimmed;
+        }
+        int hit = keyword == null ? -1 : trimmed.indexOf(keyword);
+        // 从命中词往前留一半上下文，尽量让"语境"完整
+        int start = hit < 0 ? 0 : Math.max(0, hit - EXCERPT_LENGTH / 2);
+        int end = Math.min(trimmed.length(), start + EXCERPT_LENGTH);
+        start = Math.max(0, end - EXCERPT_LENGTH);
+        String body = trimmed.substring(start, end);
+        return (start > 0 ? "…" : "") + body + (end < trimmed.length() ? "…" : "");
     }
 }

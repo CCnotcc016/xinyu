@@ -87,6 +87,7 @@ import { computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { showConfirmDialog } from 'vant'
 import { useUserStore } from '../stores/user'
+import { logoutAndClear } from '../utils/session'
 import { useChatStore } from '../stores/chat'
 import { useUpdateNotice } from '../composables/useUpdateNotice'
 import { versionLabel } from '../config/changelog'
@@ -104,7 +105,7 @@ onMounted(() => chatStore.refresh())
 
 async function onLogout() {
   await showConfirmDialog({ title: '提示', message: '确定退出登录吗？' })
-  userStore.logout()
+  await logoutAndClear()
   router.replace('/login')
 }
 </script>

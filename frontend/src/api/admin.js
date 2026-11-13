@@ -6,6 +6,8 @@ export const deleteUser = (id) => request.delete(`/admin/users/${id}`)
 /** 解除因密码连续错误产生的临时锁定 */
 export const unlockUser = (id) => request.post(`/admin/users/${id}/unlock`)
 export const listDiaries = (params) => request.get('/admin/diaries', { params })
+/** 查看日记原文：必须带理由，后端会记录审计日志 */
+export const revealDiary = (id, reason) => request.post(`/admin/diaries/${id}/reveal`, { reason })
 export const deleteDiary = (id) => request.delete(`/admin/diaries/${id}`)
 export const listPosts = (params) => request.get('/admin/posts', { params })
 export const updatePostStatus = (id, status) => request.put(`/admin/posts/${id}/status`, null, { params: { status } })

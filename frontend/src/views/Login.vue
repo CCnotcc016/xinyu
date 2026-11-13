@@ -192,6 +192,12 @@ onBeforeUnmount(() => {
 })
 
 function enterApp(user, redirect) {
+  // 首个管理员由环境变量引导创建，带 must_change_password：先把初始密码改掉再进应用
+  if (user?.mustChangePassword) {
+    showToast('请先修改初始密码')
+    router.replace({ name: 'settings', query: { forcePassword: '1' } })
+    return
+  }
   // 客服账号没有日记和树洞，直接落到工作台；管理员照旧进首页（首页有后台入口）
   if (user?.role === 'STAFF') {
     router.replace('/staff')

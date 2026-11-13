@@ -10,11 +10,18 @@
 # （连带清理它们产生的日记、帖子、评论、点赞、举报、危机预警），不会留下垃圾数据。
 # v2.0 起注册必须带手机号：脚本会自动过图形验证码、取短信验证码再注册，
 # 因此需要在 dev 配置下运行（xinyu.captcha.echo-code / xinyu.sms.echo-code=true 回显验证码）。
-# 清理需要管理员账号，默认 admin / zNc40171316，可用环境变量覆盖。
+# 清理需要管理员账号：请用 ADMIN_USER / ADMIN_PASS 传入，仓库里不再写默认口令。
 set -u
 API=${API:-http://127.0.0.1:8080/api}
 ADMIN_USER=${ADMIN_USER:-admin}
-ADMIN_PASS=${ADMIN_PASS:-zNc40171316}
+ADMIN_PASS=${ADMIN_PASS:-}
+
+if [ -z "$ADMIN_PASS" ]; then
+  echo "❌ 请设置 ADMIN_PASS（管理员密码）后再运行：" >&2
+  echo "   ADMIN_PASS='你的密码' bash scripts/smoke-test.sh" >&2
+  echo "   说明：脚本会用管理员身份清理测试账号；仓库不再内置任何默认口令。" >&2
+  exit 1
+fi
 pass=0; fail=0
 chk() { # name expected actual
   if [ "$2" = "$3" ]; then echo "  ✅ $1 (=$3)"; pass=$((pass+1));

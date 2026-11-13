@@ -117,10 +117,14 @@ public class UserService {
             throw new BusinessException(ErrorCode.PASSWORD_SAME);
         }
         PasswordPolicy.assertStrong(user.getUsername(), req.getNewPassword());
+        // 改密码 = 吊销所有旧 token（token_version +1），并清掉"首次登录必须改密"标记。
+        // 用 setSql 自增而不是 set(旧值+1)：并发改密时不会互相覆盖成同一个版本号。
         userMapper.update(null, new LambdaUpdateWrapper<User>()
                 .eq(User::getId, userId)
-                .set(User::getPasswordHash, passwordEncoder.encode(req.getNewPassword())));
-        log.info("用户 {} 修改了密码", userId);
+                .set(User::getPasswordHash, passwordEncoder.encode(req.getNewPassword()))
+                .set(User::getMustChangePassword, 0)
+                .setSql("token_version = token_version + 1"));
+        log.info("用户 {} 修改了密码，已吊销历史 token", userId);
     }
 
     @Transactional(rollbackFor = Exception.class)
@@ -147,9 +151,11 @@ public class UserService {
             throw new BusinessException(ErrorCode.PHONE_EXISTS);
         }
 
+        // 换绑手机号等于换了找回凭据，旧 token 一并作废
         userMapper.update(null, new LambdaUpdateWrapper<User>()
                 .eq(User::getId, userId)
-                .set(User::getPhone, phone));
+                .set(User::getPhone, phone)
+                .setSql("token_version = token_version + 1"));
         user.setPhone(phone);
         return UserVO.from(user);
     }

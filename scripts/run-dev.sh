@@ -49,6 +49,11 @@ if [ -z "$JAR" ] || [ ! -f "$JAR" ]; then
   JAR="$(ls -t "$ROOT"/backend/target/xinyu-backend-*.jar | head -1)"
 fi
 
-echo "🚀 启动后端（profile=${SPRING_PROFILES_ACTIVE:-dev}）"
+# 本机开发固定 dev：application.yml 的默认 profile 已经改成 prod（生产必须显式注入密钥），
+# 这里不显式指定的话，本地会按生产配置启动并因为缺 MYSQL_PASSWORD / JWT_SECRET 直接失败。
+: "${SPRING_PROFILES_ACTIVE:=dev}"
+export SPRING_PROFILES_ACTIVE
+
+echo "🚀 启动后端（profile=${SPRING_PROFILES_ACTIVE}）"
 cd "$ROOT/backend"
 exec java -jar "$JAR"

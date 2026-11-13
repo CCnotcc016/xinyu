@@ -15,7 +15,7 @@ spring:
     init:
       mode: always
       # upgrade-*.sql 都是幂等的增量升级脚本，老库补字段、新库自动跳过
-      schema-locations: classpath:db/schema.sql,classpath:db/upgrade-v2.sql,classpath:db/upgrade-v2.2.sql,classpath:db/upgrade-v2.3.sql,classpath:db/upgrade-v2.4.sql,classpath:db/upgrade-v2.4.1.sql,classpath:db/upgrade-v3.0.sql,classpath:db/upgrade-v3.1.sql,classpath:db/upgrade-v3.2.sql,classpath:db/upgrade-v3.3.sql,classpath:db/upgrade-v3.4.sql,classpath:db/upgrade-v3.5.sql
+      schema-locations: classpath:db/schema.sql,classpath:db/upgrade-v2.sql,classpath:db/upgrade-v2.2.sql,classpath:db/upgrade-v2.3.sql,classpath:db/upgrade-v2.4.sql,classpath:db/upgrade-v2.4.1.sql,classpath:db/upgrade-v3.0.sql,classpath:db/upgrade-v3.1.sql,classpath:db/upgrade-v3.2.sql,classpath:db/upgrade-v3.3.sql,classpath:db/upgrade-v3.4.sql,classpath:db/upgrade-v3.5.sql,classpath:db/upgrade-v3.6.sql
       # seed-demo.sql 是演示数据（含 5 个普通用户 + 2 个客服），幂等且只在 dev 生效；
       # 想清空演示数据时把这一项去掉即可
       data-locations: classpath:db/data.sql,classpath:db/seed-demo.sql
@@ -23,9 +23,19 @@ spring:
 
 # —— 以下是仅限本机开发/演示的开关，生产环境一律关闭 ——
 xinyu:
+  jwt:
+    # 仅供本机开发 / 演示的固定密钥；生产环境缺 JWT_SECRET 会直接启动失败
+    secret: ${JWT_SECRET:dev-only-placeholder-secret-for-local-run-32chars}
   captcha:
     # 图形验证码接口会把答案一并返回，方便写自动化测试与本地演示
     echo-code: true
   sms:
-    # 本机没有接短信服务商，验证码写日志 + 响应里回显，方便演示
+    # 本机没有接短信服务商，验证码只回显在接口响应里（不打日志），方便演示
     echo-code: true
+
+# 本机开发想看 SQL 时不用改代码，启动时加一行环境变量即可：
+#   LOGGING_LEVEL_COM_XINYU_MAPPER=debug
+# 这里不再用 StdOutImpl——它会把参数（含密码哈希、手机号）原样打到控制台。
+mybatis-plus:
+  configuration:
+    log-impl: org.apache.ibatis.logging.slf4j.Slf4jImpl

@@ -78,6 +78,9 @@ const STAFF_ALLOWED = new Set([
   'legal-disclaimer'
 ])
 
+/* 初始密码未改时唯一能去的页面 */
+const MUST_CHANGE_ALLOWED = new Set(['settings', 'login', 'sponsor', 'legal-terms', 'legal-privacy', 'legal-disclaimer'])
+
 const router = createRouter({
   history: createWebHistory(),
   routes
@@ -96,6 +99,10 @@ router.beforeEach((to) => {
   }
   if (userStore.isStaff && !to.meta.public && !STAFF_ALLOWED.has(to.name)) {
     return { name: 'staff' }
+  }
+  // 初始密码未改：后端只放行「改密 / 我的信息 / 登录」，前端别让人白点一圈
+  if (userStore.user?.mustChangePassword && !MUST_CHANGE_ALLOWED.has(to.name)) {
+    return { name: 'settings', query: { forcePassword: '1' } }
   }
   return true
 })

@@ -3,7 +3,7 @@
 #
 # 用法：
 #   bash scripts/admin-sse-test.sh
-#   ADMIN_USER=admin ADMIN_PASS=zNc40171316 bash scripts/admin-sse-test.sh
+#   ADMIN_USER=admin ADMIN_PASS='你的密码' bash scripts/admin-sse-test.sh
 #
 # 依赖：curl、python3。
 # 脚本会注册随机用户、发帖、举报并执行管理操作。
@@ -11,7 +11,12 @@
 set -u
 API=${API:-http://127.0.0.1:8080/api}
 ADMIN_USER=${ADMIN_USER:-admin}
-ADMIN_PASS=${ADMIN_PASS:-zNc40171316}
+ADMIN_PASS=${ADMIN_PASS:-}
+
+if [ -z "$ADMIN_PASS" ]; then
+  echo "❌ 请设置 ADMIN_PASS（管理员密码）后再运行：ADMIN_PASS='你的密码' bash scripts/admin-sse-test.sh" >&2
+  exit 1
+fi
 pass=0; fail=0
 chk() {
   if [ "$2" = "$3" ]; then echo "  ✅ $1 (=$3)"; pass=$((pass+1));

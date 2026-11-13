@@ -2,8 +2,10 @@ spring:
   datasource:
     driver-class-name: com.mysql.cj.jdbc.Driver
     url: jdbc:mysql://${MYSQL_HOST:mysql}:3306/${MYSQL_DB:xinyu}?createDatabaseIfNotExist=true&useUnicode=true&characterEncoding=utf8&serverTimezone=Asia/Shanghai&useSSL=false&allowPublicKeyRetrieval=true
-    username: ${MYSQL_USER:root}
-    password: ${MYSQL_PASSWORD:root}
+    # 生产用专用应用账号，不再用 root 直连：SQL 注入 / 配置泄漏时能少一层权限
+    username: ${MYSQL_USER:xinyu}
+    # 不给默认值：缺密码时启动失败，避免又一次带着 root/root 上线
+    password: ${MYSQL_PASSWORD}
   data:
     redis:
       host: ${REDIS_HOST:redis}

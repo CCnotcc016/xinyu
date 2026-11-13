@@ -62,6 +62,13 @@ public class AuthController {
         return Result.ok(authService.register(req));
     }
 
+    /** 退出登录：服务端吊销当前 token（token_version +1），不再只是前端删 localStorage */
+    @PostMapping("/logout")
+    public Result<Void> logout() {
+        authService.logout(com.xinyu.security.SecurityUtil.getCurrentUserId());
+        return Result.ok();
+    }
+
     /** 登录：按账号失败次数锁定 + 同 IP 失败频次限制，见 LoginAttemptService */
     @PostMapping("/login")
     public Result<LoginResponse> login(@Valid @RequestBody LoginRequest req, HttpServletRequest request) {

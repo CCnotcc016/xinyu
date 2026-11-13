@@ -35,6 +35,8 @@ public class UserVO {
     private Boolean locationConsent;
     /** 登录锁定到期时间，未锁定为 null；后台据此显示「已锁定」与解锁按钮 */
     private LocalDateTime lockedUntil;
+    /** 首次登录未改密：前端据此把用户挡在改密码页面 */
+    private Boolean mustChangePassword;
 
     public static UserVO from(User user) {
         UserVO vo = new UserVO();
@@ -52,6 +54,7 @@ public class UserVO {
         vo.agreementAccepted = Legal.CURRENT_VERSION.equals(user.getAgreementVersion());
         vo.locationConsent = user.getLocationConsent() != null && user.getLocationConsent() == 1;
         vo.lockedUntil = user.getLockedUntil();
+        vo.mustChangePassword = user.getMustChangePassword() != null && user.getMustChangePassword() == 1;
         return vo;
     }
 
